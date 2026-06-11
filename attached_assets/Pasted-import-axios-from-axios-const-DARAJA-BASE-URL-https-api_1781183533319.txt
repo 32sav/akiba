@@ -1,0 +1,77 @@
+import axios from 'axios';
+
+const DARAJA_BASE_URL = 'https://api.sandbox.safaricom.co.ke';
+
+interface DarajaConfig {
+  consumerKey: string;
+  consumerSecret: string;
+  shortCode: string;
+  passkey: string;
+}
+
+const darajaConfig: DarajaConfig = {
+  consumerKey: process.env.DARJA_CONSUMER_KEY || '',
+  consumerSecret: process.env.DARJA_CONSUMER_SECRET || '',
+  shortCode: process.env.DARJA_SHORT_CODE || '',
+  passkey: process.env.DARJA_PASSKEY || '',
+};
+
+export const getDarajaToken = async (): Promise<string> => {
+  try {
+    const auth = Buffer.from(
+      `${darajaConfig.consumerKey}:${darajaConfig.consumerSecret}`
+    ).toString('base64');
+
+    const response = await axios.get(
+      `${DARAJA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
+      { headers: { Authorization: `Basic ${auth}` } }
+    );
+    return response.data.access_token;
+  } catch (error) {
+    console.error('Error getting Daraja token:', error);
+    throw error;
+  }
+};
+
+export const initiateMPesaPayment = async (
+  phoneNumber: string,
+  amount: number,
+  accountReference: string,
+  transactionDesc: string
+) => {
+  try {
+    const token = await getDarajaToken();
+    const timestamp = new Date()
+      .toISOString()
+      .replace(/[^\d]/g, '')
+      .slice(0, -3);
+    const password = Buffer.from(
+      `${darajaConfig.shortCode}${darajaConfig.passkey}${timestamp}`
+    ).toString('base64');
+
+    const response = await axios.post(
+      `${DARAJA_BASE_URL}/mpesa/stkpush/v1/processrequest`,
+      {
+        BusinessShortCode: darajaConfig.shortCode,
+        Password: password,
+        Timestamp: timestamp,
+        TransactionType: 'CustomerPayBillOnline',
+        Amount: amount,
+        PartyA: phoneNumber,
+        PartyB: darajaConfig.shortCode,
+        PhoneNumber: phoneNumber,
+        CallBackURL: 'https://yourdomain.com/api/mpesa/callback',
+        AccountReference: accountReference,
+        TransactionDesc: transactionDesc,
+      },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    return response.data;
+  } catch (error) {
+    console.error('Error initiating M-Pesa payment:', error);
+    throw error;
+  }
+};
+
+export default darajaConfig;
