@@ -3,20 +3,29 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Akiba - Chama management platform
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: chamas
+    description: Chama group operations
+  - name: members
+    description: Member operations
+  - name: contributions
+    description: Contribution operations
+  - name: loans
+    description: Loan operations
+  - name: mpesa
+    description: M-Pesa payment operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +33,475 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /chamas:
+    get:
+      operationId: listChamas
+      tags: [chamas]
+      summary: List all chamas
+      responses:
+        "200":
+          description: List of chamas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Chama"
+    post:
+      operationId: createChama
+      tags: [chamas]
+      summary: Create a new chama
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChamaInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chama"
+
+  /chamas/{id}:
+    get:
+      operationId: getChama
+      tags: [chamas]
+      summary: Get a chama by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Chama details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chama"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateChama
+      tags: [chamas]
+      summary: Update a chama
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChamaUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chama"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteChama
+      tags: [chamas]
+      summary: Delete a chama
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /chamas/{id}/summary:
+    get:
+      operationId: getChamaSummary
+      tags: [chamas]
+      summary: Get financial summary for a chama
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Chama financial summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChamaSummary"
+        "404":
+          description: Not found
+
+  /chamas/{chamaId}/members:
+    get:
+      operationId: listMembers
+      tags: [members]
+      summary: List members of a chama
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Member"
+    post:
+      operationId: addMember
+      tags: [members]
+      summary: Add a member to a chama
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+
+  /chamas/{chamaId}/members/{memberId}:
+    get:
+      operationId: getMember
+      tags: [members]
+      summary: Get a member
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Member details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateMember
+      tags: [members]
+      summary: Update a member
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "404":
+          description: Not found
+    delete:
+      operationId: removeMember
+      tags: [members]
+      summary: Remove a member from a chama
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Removed
+        "404":
+          description: Not found
+
+  /chamas/{chamaId}/contributions:
+    get:
+      operationId: listContributions
+      tags: [contributions]
+      summary: List contributions for a chama
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of contributions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Contribution"
+    post:
+      operationId: recordContribution
+      tags: [contributions]
+      summary: Record a contribution manually
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContributionInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contribution"
+
+  /chamas/{chamaId}/loans:
+    get:
+      operationId: listLoans
+      tags: [loans]
+      summary: List loans for a chama
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of loans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Loan"
+    post:
+      operationId: createLoan
+      tags: [loans]
+      summary: Create a loan for a member
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoanInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+
+  /chamas/{chamaId}/loans/{loanId}:
+    get:
+      operationId: getLoan
+      tags: [loans]
+      summary: Get a loan
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Loan details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateLoan
+      tags: [loans]
+      summary: Update loan status or details
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoanUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+        "404":
+          description: Not found
+
+  /chamas/{chamaId}/loans/{loanId}/repayments:
+    get:
+      operationId: listRepayments
+      tags: [loans]
+      summary: List repayments for a loan
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of repayments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Repayment"
+    post:
+      operationId: recordRepayment
+      tags: [loans]
+      summary: Record a loan repayment
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepaymentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repayment"
+
+  /mpesa/stkpush:
+    post:
+      operationId: initiateMpesaPayment
+      tags: [mpesa]
+      summary: Initiate M-Pesa STK Push payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MpesaPaymentInput"
+      responses:
+        "200":
+          description: STK Push initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MpesaPaymentResult"
+        "400":
+          description: Bad request
+
+  /mpesa/callback:
+    post:
+      operationId: mpesaCallback
+      tags: [mpesa]
+      summary: M-Pesa payment callback (Safaricom webhook)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MpesaCallbackPayload"
+      responses:
+        "200":
+          description: Acknowledged
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +512,313 @@ components:
       required:
         - status
 
+    Chama:
+      type: object
+      required: [id, name, meetingFrequency, contributionAmount, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        meetingFrequency:
+          type: string
+          enum: [weekly, monthly, quarterly]
+        contributionAmount:
+          type: number
+        bankAccount:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ChamaInput:
+      type: object
+      required: [name, meetingFrequency, contributionAmount]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        meetingFrequency:
+          type: string
+          enum: [weekly, monthly, quarterly]
+        contributionAmount:
+          type: number
+          minimum: 1
+        bankAccount:
+          type: string
+
+    ChamaUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        meetingFrequency:
+          type: string
+          enum: [weekly, monthly, quarterly]
+        contributionAmount:
+          type: number
+          minimum: 1
+        bankAccount:
+          type: string
+
+    ChamaSummary:
+      type: object
+      required: [chamaId, totalSavings, totalLoaned, totalRepaid, activeLoanCount, memberCount, recentContributions]
+      properties:
+        chamaId:
+          type: integer
+        totalSavings:
+          type: number
+        totalLoaned:
+          type: number
+        totalRepaid:
+          type: number
+        activeLoanCount:
+          type: integer
+        memberCount:
+          type: integer
+        recentContributions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Contribution"
+
+    Member:
+      type: object
+      required: [id, chamaId, name, phoneNumber, role, joinedAt]
+      properties:
+        id:
+          type: integer
+        chamaId:
+          type: integer
+        name:
+          type: string
+        phoneNumber:
+          type: string
+        email:
+          type: ["string", "null"]
+        role:
+          type: string
+          enum: [chairperson, treasurer, secretary, member]
+        joinedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    MemberInput:
+      type: object
+      required: [name, phoneNumber, role]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        phoneNumber:
+          type: string
+          minLength: 1
+        email:
+          type: string
+        role:
+          type: string
+          enum: [chairperson, treasurer, secretary, member]
+
+    MemberUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        phoneNumber:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [chairperson, treasurer, secretary, member]
+
+    Contribution:
+      type: object
+      required: [id, chamaId, memberId, memberName, amount, status, paidAt, createdAt]
+      properties:
+        id:
+          type: integer
+        chamaId:
+          type: integer
+        memberId:
+          type: integer
+        memberName:
+          type: string
+        amount:
+          type: number
+        status:
+          type: string
+          enum: [pending, completed, failed]
+        mpesaRef:
+          type: ["string", "null"]
+        paidAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    ContributionInput:
+      type: object
+      required: [memberId, amount]
+      properties:
+        memberId:
+          type: integer
+        amount:
+          type: number
+          minimum: 1
+        mpesaRef:
+          type: string
+        status:
+          type: string
+          enum: [pending, completed, failed]
+
+    Loan:
+      type: object
+      required: [id, chamaId, memberId, memberName, principal, interestRate, status, disbursedAt, dueDate, createdAt]
+      properties:
+        id:
+          type: integer
+        chamaId:
+          type: integer
+        memberId:
+          type: integer
+        memberName:
+          type: string
+        principal:
+          type: number
+        interestRate:
+          type: number
+        totalDue:
+          type: number
+        totalRepaid:
+          type: number
+        status:
+          type: string
+          enum: [pending, active, repaid, defaulted]
+        disbursedAt:
+          type: ["string", "null"]
+          format: date-time
+        dueDate:
+          type: string
+          format: date
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    LoanInput:
+      type: object
+      required: [memberId, principal, interestRate, dueDate]
+      properties:
+        memberId:
+          type: integer
+        principal:
+          type: number
+          minimum: 1
+        interestRate:
+          type: number
+          minimum: 0
+        dueDate:
+          type: string
+          format: date
+        notes:
+          type: string
+
+    LoanUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, active, repaid, defaulted]
+        disbursedAt:
+          type: string
+          format: date-time
+        notes:
+          type: string
+
+    Repayment:
+      type: object
+      required: [id, loanId, chamaId, memberId, amount, paidAt, createdAt]
+      properties:
+        id:
+          type: integer
+        loanId:
+          type: integer
+        chamaId:
+          type: integer
+        memberId:
+          type: integer
+        amount:
+          type: number
+        mpesaRef:
+          type: ["string", "null"]
+        paidAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    RepaymentInput:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: number
+          minimum: 1
+        mpesaRef:
+          type: string
+
+    MpesaPaymentInput:
+      type: object
+      required: [phoneNumber, amount, accountReference, transactionDesc]
+      properties:
+        phoneNumber:
+          type: string
+          minLength: 1
+        amount:
+          type: number
+          minimum: 1
+        accountReference:
+          type: string
+          minLength: 1
+        transactionDesc:
+          type: string
+          minLength: 1
+
+    MpesaPaymentResult:
+      type: object
+      required: [merchantRequestId, checkoutRequestId, responseCode, responseDescription, customerMessage]
+      properties:
+        merchantRequestId:
+          type: string
+        checkoutRequestId:
+          type: string
+        responseCode:
+          type: string
+        responseDescription:
+          type: string
+        customerMessage:
+          type: string
+
+    MpesaCallbackPayload:
+      type: object
+      properties:
+        Body:
+          type: object
