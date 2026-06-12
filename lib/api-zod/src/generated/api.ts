@@ -412,6 +412,33 @@ export const RecordRepaymentBody = zod.object({
 
 
 /**
+ * @summary List M-Pesa transaction history for a chama
+ */
+export const ListMpesaTransactionsParams = zod.object({
+  "chamaId": zod.coerce.number()
+})
+
+export const ListMpesaTransactionsResponseItem = zod.object({
+  "id": zod.number(),
+  "chamaId": zod.number(),
+  "memberId": zod.number().nullish(),
+  "memberName": zod.string().nullish(),
+  "contributionId": zod.number().nullish(),
+  "type": zod.enum(['contribution', 'payout']),
+  "amount": zod.number(),
+  "phoneNumber": zod.string().nullish(),
+  "status": zod.enum(['pending', 'completed', 'failed', 'cancelled', 'timeout', 'expired']),
+  "mpesaReceiptNumber": zod.string().nullish(),
+  "checkoutRequestId": zod.string().nullish(),
+  "conversationId": zod.string().nullish(),
+  "failureReason": zod.string().nullish(),
+  "createdAt": zod.coerce.date(),
+  "completedAt": zod.coerce.date().nullish()
+})
+export const ListMpesaTransactionsResponse = zod.array(ListMpesaTransactionsResponseItem)
+
+
+/**
  * @summary Initiate M-Pesa STK Push payment
  */
 
@@ -424,7 +451,9 @@ export const InitiateMpesaPaymentBody = zod.object({
   "phoneNumber": zod.string().min(1),
   "amount": zod.number().min(1),
   "accountReference": zod.string().min(1),
-  "transactionDesc": zod.string().min(1)
+  "transactionDesc": zod.string().min(1),
+  "chamaId": zod.number().optional(),
+  "memberId": zod.number().optional()
 })
 
 export const InitiateMpesaPaymentResponse = zod.object({
@@ -432,17 +461,70 @@ export const InitiateMpesaPaymentResponse = zod.object({
   "checkoutRequestId": zod.string(),
   "responseCode": zod.string(),
   "responseDescription": zod.string(),
-  "customerMessage": zod.string()
+  "customerMessage": zod.string(),
+  "contributionId": zod.number().nullish()
 })
 
 
 /**
- * @summary M-Pesa payment callback (Safaricom webhook)
+ * @summary M-Pesa STK Push callback (Safaricom webhook)
  */
 export const MpesaCallbackBody = zod.object({
   "Body": zod.object({
 
 }).passthrough().optional()
+})
+
+
+/**
+ * @summary Disburse B2C payout to a member
+ */
+
+
+
+
+
+export const DisburseB2cPayoutBody = zod.object({
+  "chamaId": zod.number(),
+  "memberId": zod.number(),
+  "phoneNumber": zod.string().min(1),
+  "amount": zod.number().min(1),
+  "roundNumber": zod.number().min(1)
+})
+
+export const DisburseB2cPayoutResponse = zod.object({
+  "conversationId": zod.string(),
+  "originatorConversationId": zod.string(),
+  "responseCode": zod.string(),
+  "responseDescription": zod.string()
+})
+
+
+/**
+ * @summary B2C payout result callback (Safaricom webhook)
+ */
+export const B2cResultCallbackBody = zod.object({
+  "Result": zod.object({
+
+}).passthrough().optional()
+}).describe('Generic Safaricom Daraja webhook payload')
+
+
+/**
+ * @summary B2C payout timeout callback (Safaricom webhook)
+ */
+export const B2cTimeoutCallbackBody = zod.object({
+  "Result": zod.object({
+
+}).passthrough().optional()
+}).describe('Generic Safaricom Daraja webhook payload')
+
+
+/**
+ * @summary Expire stale pending transactions older than 5 minutes
+ */
+export const ReconcilePendingTransactionsResponse = zod.object({
+  "expiredCount": zod.number()
 })
 
 

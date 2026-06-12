@@ -75,7 +75,9 @@ router.post("/chamas/:chamaId/loans", async (req, res): Promise<void> => {
       memberId: parsed.data.memberId,
       principal: String(parsed.data.principal),
       interestRate: String(parsed.data.interestRate),
-      dueDate: parsed.data.dueDate,
+      dueDate: parsed.data.dueDate instanceof Date
+        ? parsed.data.dueDate.toISOString().split("T")[0]
+        : String(parsed.data.dueDate),
       notes: parsed.data.notes,
     })
     .returning();

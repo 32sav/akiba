@@ -6,12 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface MpesaPaymentResult {
-  merchantRequestId: string;
-  checkoutRequestId: string;
+export interface B2cDisburseResult {
+  conversationId: string;
+  originatorConversationId: string;
   responseCode: string;
   responseDescription: string;
-  customerMessage: string;
-  /** @nullable */
-  contributionId?: number | null;
 }

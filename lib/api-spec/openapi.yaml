@@ -466,6 +466,27 @@ paths:
               schema:
                 $ref: "#/components/schemas/Repayment"
 
+  /chamas/{chamaId}/transactions:
+    get:
+      operationId: listMpesaTransactions
+      tags: [mpesa]
+      summary: List M-Pesa transaction history for a chama
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of M-Pesa transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MpesaTransaction"
+
   /mpesa/stkpush:
     post:
       operationId: initiateMpesaPayment
@@ -491,7 +512,7 @@ paths:
     post:
       operationId: mpesaCallback
       tags: [mpesa]
-      summary: M-Pesa payment callback (Safaricom webhook)
+      summary: M-Pesa STK Push callback (Safaricom webhook)
       requestBody:
         required: true
         content:
@@ -501,6 +522,74 @@ paths:
       responses:
         "200":
           description: Acknowledged
+
+  /mpesa/disburse:
+    post:
+      operationId: disburseB2cPayout
+      tags: [mpesa]
+      summary: Disburse B2C payout to a member
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/B2cDisburseInput"
+      responses:
+        "200":
+          description: B2C payout queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/B2cDisburseResult"
+        "400":
+          description: Bad request
+
+  /mpesa/webhooks/b2c-result:
+    post:
+      operationId: b2cResultCallback
+      tags: [mpesa]
+      summary: B2C payout result callback (Safaricom webhook)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DarajaWebhookPayload"
+      responses:
+        "200":
+          description: Acknowledged
+
+  /mpesa/webhooks/b2c-timeout:
+    post:
+      operationId: b2cTimeoutCallback
+      tags: [mpesa]
+      summary: B2C payout timeout callback (Safaricom webhook)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DarajaWebhookPayload"
+      responses:
+        "200":
+          description: Acknowledged
+
+  /mpesa/reconcile:
+    post:
+      operationId: reconcilePendingTransactions
+      tags: [mpesa]
+      summary: Expire stale pending transactions older than 5 minutes
+      responses:
+        "200":
+          description: Reconciliation result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [expiredCount]
+                properties:
+                  expiredCount:
+                    type: integer
 
 components:
   schemas:
@@ -801,6 +890,10 @@ components:
         transactionDesc:
           type: string
           minLength: 1
+        chamaId:
+          type: integer
+        memberId:
+          type: integer
 
     MpesaPaymentResult:
       type: object
@@ -816,9 +909,88 @@ components:
           type: string
         customerMessage:
           type: string
+        contributionId:
+          type: ["integer", "null"]
 
     MpesaCallbackPayload:
       type: object
       properties:
         Body:
+          type: object
+
+    MpesaTransaction:
+      type: object
+      required: [id, chamaId, type, amount, status, createdAt]
+      properties:
+        id:
+          type: integer
+        chamaId:
+          type: integer
+        memberId:
+          type: ["integer", "null"]
+        memberName:
+          type: ["string", "null"]
+        contributionId:
+          type: ["integer", "null"]
+        type:
+          type: string
+          enum: [contribution, payout]
+        amount:
+          type: number
+        phoneNumber:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [pending, completed, failed, cancelled, timeout, expired]
+        mpesaReceiptNumber:
+          type: ["string", "null"]
+        checkoutRequestId:
+          type: ["string", "null"]
+        conversationId:
+          type: ["string", "null"]
+        failureReason:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    B2cDisburseInput:
+      type: object
+      required: [chamaId, memberId, phoneNumber, amount, roundNumber]
+      properties:
+        chamaId:
+          type: integer
+        memberId:
+          type: integer
+        phoneNumber:
+          type: string
+          minLength: 1
+        amount:
+          type: number
+          minimum: 1
+        roundNumber:
+          type: integer
+          minimum: 1
+
+    B2cDisburseResult:
+      type: object
+      required: [conversationId, originatorConversationId, responseCode, responseDescription]
+      properties:
+        conversationId:
+          type: string
+        originatorConversationId:
+          type: string
+        responseCode:
+          type: string
+        responseDescription:
+          type: string
+
+    DarajaWebhookPayload:
+      type: object
+      description: Generic Safaricom Daraja webhook payload
+      properties:
+        Result:
           type: object

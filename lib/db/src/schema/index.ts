@@ -3,3 +3,4 @@ export * from "./members";
 export * from "./contributions";
 export * from "./loans";
 export * from "./repayments";
+export * from "./mpesaTransactions";

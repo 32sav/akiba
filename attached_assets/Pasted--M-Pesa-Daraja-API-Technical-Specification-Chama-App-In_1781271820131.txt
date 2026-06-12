@@ -1,0 +1,605 @@
+# M-Pesa Daraja API — Technical Specification
+### Chama App Integration · v1.0 · June 2026
+
+---
+
+## 1. Overview
+
+This spec covers the complete Daraja API integration for the Chama app. Two flows are required:
+
+| Flow | Daraja API | Purpose |
+|------|-----------|---------|
+| **C2B — Contributions** | STK Push (Lipa na M-Pesa) | Members pay monthly contributions into the chama pool |
+| **B2C — Payouts** | Business to Customer | Admin disburses the lump sum to the winning member |
+
+All API calls originate from your **Node.js backend** — never from the mobile app directly.
+
+---
+
+## 2. Prerequisites
+
+### 2.1 Safaricom Daraja Portal Setup
+1. Register at [developer.safaricom.co.ke](https://developer.safaricom.co.ke)
+2. Create an app and enable these API products:
+   - **Lipa na M-Pesa Online** (STK Push)
+   - **B2C Payment** (Payouts)
+   - **Transaction Status Query** (reconciliation)
+3. Note your credentials:
+   - `CONSUMER_KEY`
+   - `CONSUMER_SECRET`
+   - `PASSKEY` (for STK Push password generation)
+   - `BUSINESS_SHORTCODE` (PayBill number)
+   - `B2C_INITIATOR_NAME`
+   - `B2C_INITIATOR_PASSWORD`
+
+### 2.2 Infrastructure Requirements
+- Node.js backend (Express / Fastify)
+- HTTPS callback URLs (Safaricom rejects HTTP) — use Let's Encrypt
+- PostgreSQL or Supabase for transaction ledger
+- Redis for idempotency keys and token caching
+
+---
+
+## 3. Authentication
+
+Daraja uses OAuth 2.0. Access tokens expire after **1 hour** and must be cached.
+
+### 3.1 Token Endpoint
+```
+GET https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials
+Authorization: Basic base64(CONSUMER_KEY:CONSUMER_SECRET)
+```
+
+### 3.2 Node.js Implementation
+
+```javascript
+// services/daraja/auth.js
+import { createClient } from 'redis';
+
+const redis = createClient({ url: process.env.REDIS_URL });
+const BASE_URL = process.env.DARAJA_ENV === 'production'
+  ? 'https://api.safaricom.co.ke'
+  : 'https://sandbox.safaricom.co.ke';
+
+export async function getAccessToken() {
+  // Check cache first
+  const cached = await redis.get('daraja:access_token');
+  if (cached) return cached;
+
+  const auth = Buffer.from(
+    `${process.env.CONSUMER_KEY}:${process.env.CONSUMER_SECRET}`
+  ).toString('base64');
+
+  const res = await fetch(
+    `${BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
+    { headers: { Authorization: `Basic ${auth}` } }
+  );
+
+  const { access_token, expires_in } = await res.json();
+
+  // Cache for 50 minutes (token valid 60 min; buffer for clock skew)
+  await redis.setEx('daraja:access_token', 3000, access_token);
+  return access_token;
+}
+```
+
+---
+
+## 4. Flow 1 — STK Push (Contribution Collection)
+
+### 4.1 How It Works
+1. Member taps **"Pay Contribution"** in the app
+2. App calls your backend `POST /api/payments/stk-push`
+3. Backend calls Daraja `/mpesa/stkpush/v1/processrequest`
+4. Safaricom sends a PIN prompt to the member's phone (within ~5 seconds)
+5. Member enters M-Pesa PIN (60-second window)
+6. Safaricom POSTs the result to your `CallbackURL`
+7. Your backend updates the ledger and notifies the app via push notification
+
+### 4.2 Password Generation
+The STK Push password is a base64-encoded concatenation of three values:
+
+```
+password = base64( SHORTCODE + PASSKEY + TIMESTAMP )
+timestamp = YYYYMMDDHHmmss  // e.g. 20260612143022
+```
+
+### 4.3 STK Push Request
+
+**Endpoint:** `POST /mpesa/stkpush/v1/processrequest`
+
+```javascript
+// services/daraja/stkPush.js
+export async function initiateStkPush({ phone, amount, chamaId, memberId }) {
+  const token = await getAccessToken();
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/[^0-9]/g, '')
+    .slice(0, 14);
+
+  const password = Buffer.from(
+    `${process.env.SHORTCODE}${process.env.PASSKEY}${timestamp}`
+  ).toString('base64');
+
+  const payload = {
+    BusinessShortCode: process.env.SHORTCODE,
+    Password: password,
+    Timestamp: timestamp,
+    TransactionType: 'CustomerPayBillOnline',
+    Amount: Math.round(amount),           // Integer only — no decimals
+    PartyA: formatPhone(phone),           // 254XXXXXXXXX format
+    PartyB: process.env.SHORTCODE,
+    PhoneNumber: formatPhone(phone),
+    CallbackURL: `${process.env.BASE_URL}/api/webhooks/stk-callback`,
+    AccountReference: `CHAMA-${chamaId}`,
+    TransactionDesc: `Contribution for chama ${chamaId}`,
+  };
+
+  const res = await fetch(
+    `${BASE_URL}/mpesa/stkpush/v1/processrequest`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  const data = await res.json();
+
+  if (data.ResponseCode !== '0') {
+    throw new Error(`STK Push failed: ${data.ResponseDescription}`);
+  }
+
+  // Persist pending transaction for reconciliation
+  await db.transactions.create({
+    checkoutRequestId: data.CheckoutRequestID,
+    merchantRequestId: data.MerchantRequestID,
+    chamaId,
+    memberId,
+    amount,
+    status: 'pending',
+    createdAt: new Date(),
+  });
+
+  return { checkoutRequestId: data.CheckoutRequestID };
+}
+
+// Phone formatter: 0712345678 → 254712345678
+function formatPhone(phone) {
+  return phone.replace(/^0/, '254').replace(/^\+/, '');
+}
+```
+
+### 4.4 STK Push Callback Handler
+
+```javascript
+// routes/webhooks/stkCallback.js
+router.post('/api/webhooks/stk-callback', async (req, res) => {
+  // Always respond 200 immediately — Safaricom retries aggressively on failure
+  res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+
+  try {
+    const body = req.body?.Body?.stkCallback;
+    const { MerchantRequestID, CheckoutRequestID, ResultCode, ResultDesc } = body;
+
+    // Idempotency: skip if already processed
+    const alreadyProcessed = await redis.get(`processed:${CheckoutRequestID}`);
+    if (alreadyProcessed) return;
+    await redis.setEx(`processed:${CheckoutRequestID}`, 86400, '1');
+
+    const tx = await db.transactions.findOne({ checkoutRequestId: CheckoutRequestID });
+    if (!tx) return; // Unknown transaction — ignore
+
+    if (ResultCode === 0) {
+      // Payment successful
+      const items = body.CallbackMetadata?.Item || [];
+      const get = (name) => items.find(i => i.Name === name)?.Value;
+
+      await db.transactions.update(tx.id, {
+        status: 'completed',
+        mpesaReceiptNumber: get('MpesaReceiptNumber'),
+        transactionDate: get('TransactionDate'),
+        phoneNumber: get('PhoneNumber'),
+        amount: get('Amount'),
+        completedAt: new Date(),
+      });
+
+      // Update chama pool balance
+      await db.chamas.incrementBalance(tx.chamaId, tx.amount);
+
+      // Mark member as paid for this round
+      await db.chamaMembers.markPaid(tx.chamaId, tx.memberId);
+
+      // Push notification to admin
+      await sendPushNotification({
+        userId: tx.adminId,
+        title: 'Contribution received 💚',
+        body: `${tx.memberName} paid KSh ${tx.amount.toLocaleString()}`,
+      });
+
+    } else {
+      // Payment failed or cancelled
+      await db.transactions.update(tx.id, {
+        status: ResultCode === 1032 ? 'cancelled' : 'failed',
+        failureReason: ResultDesc,
+      });
+
+      // Notify member to retry
+      await sendPushNotification({
+        userId: tx.memberId,
+        title: 'Payment not completed',
+        body: ResultCode === 1032
+          ? 'You cancelled the payment. Tap to retry.'
+          : 'Payment failed. Please try again.',
+      });
+    }
+  } catch (err) {
+    console.error('STK callback error:', err);
+    // Do not re-throw — response already sent
+  }
+});
+```
+
+### 4.5 Callback Payload Shape
+
+**On success:**
+```json
+{
+  "Body": {
+    "stkCallback": {
+      "MerchantRequestID": "29115-34620561-1",
+      "CheckoutRequestID": "ws_CO_191220191020363925",
+      "ResultCode": 0,
+      "ResultDesc": "The service request is processed successfully.",
+      "CallbackMetadata": {
+        "Item": [
+          { "Name": "Amount", "Value": 12000 },
+          { "Name": "MpesaReceiptNumber", "Value": "NLJ7RT61SV" },
+          { "Name": "TransactionDate", "Value": 20260612143055 },
+          { "Name": "PhoneNumber", "Value": 254712345678 }
+        ]
+      }
+    }
+  }
+}
+```
+
+**On failure / cancellation:**
+```json
+{
+  "Body": {
+    "stkCallback": {
+      "MerchantRequestID": "29115-34620561-1",
+      "CheckoutRequestID": "ws_CO_191220191020363925",
+      "ResultCode": 1032,
+      "ResultDesc": "Request cancelled by user."
+    }
+  }
+}
+```
+
+---
+
+## 5. Flow 2 — B2C (Payout Disbursement)
+
+### 5.1 How It Works
+1. Admin taps **"Disburse Payout"** for the winning member
+2. App calls `POST /api/payments/disburse`
+3. Backend verifies all contributions for the round are complete
+4. Backend calls Daraja `/mpesa/b2c/v3/paymentrequest`
+5. Safaricom sends money to the member's M-Pesa account
+6. Safaricom POSTs result to your `ResultURL`
+
+### 5.2 Security Credential Generation
+
+B2C requires your initiator password to be **RSA-encrypted** with Safaricom's public certificate:
+
+```javascript
+// scripts/generateSecurityCredential.js
+import fs from 'fs';
+import crypto from 'crypto';
+
+const cert = fs.readFileSync('./certs/safaricom_prod.cer');  // download from Daraja portal
+const password = process.env.B2C_INITIATOR_PASSWORD;
+
+const encrypted = crypto.publicEncrypt(
+  { key: cert, padding: crypto.constants.RSA_PKCS1_PADDING },
+  Buffer.from(password)
+);
+
+export const SECURITY_CREDENTIAL = encrypted.toString('base64');
+// Store this value in your env — regenerate only when password changes
+```
+
+### 5.3 B2C Payout Request
+
+```javascript
+// services/daraja/b2cPayout.js
+export async function disbursePayout({ phone, amount, chamaId, memberId, roundNumber }) {
+  // Guard: only allow if all members have paid
+  const allPaid = await db.chamas.allMembersPaid(chamaId);
+  if (!allPaid) throw new Error('Not all members have contributed this round');
+
+  const token = await getAccessToken();
+
+  const payload = {
+    InitiatorName: process.env.B2C_INITIATOR_NAME,
+    SecurityCredential: process.env.B2C_SECURITY_CREDENTIAL,
+    CommandID: 'BusinessPayment',
+    Amount: Math.round(amount),
+    PartyA: process.env.SHORTCODE,
+    PartyB: formatPhone(phone),
+    Remarks: `Chama ${chamaId} Round ${roundNumber} payout`,
+    QueueTimeOutURL: `${process.env.BASE_URL}/api/webhooks/b2c-timeout`,
+    ResultURL: `${process.env.BASE_URL}/api/webhooks/b2c-result`,
+    Occassion: `Round ${roundNumber}`,
+  };
+
+  const res = await fetch(`${BASE_URL}/mpesa/b2c/v3/paymentrequest`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await res.json();
+
+  await db.payouts.create({
+    conversationId: data.ConversationID,
+    originatorConversationId: data.OriginatorConversationID,
+    chamaId,
+    memberId,
+    amount,
+    roundNumber,
+    status: 'queued',
+    createdAt: new Date(),
+  });
+
+  return { conversationId: data.ConversationID };
+}
+```
+
+### 5.4 B2C Result Callback
+
+```javascript
+// routes/webhooks/b2cResult.js
+router.post('/api/webhooks/b2c-result', async (req, res) => {
+  res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+
+  const result = req.body?.Result;
+  const { ConversationID, ResultCode, ResultDesc, ResultParameters } = result;
+
+  const payout = await db.payouts.findOne({ conversationId: ConversationID });
+  if (!payout) return;
+
+  if (ResultCode === 0) {
+    const params = ResultParameters?.ResultParameter || [];
+    const get = (key) => params.find(p => p.Key === key)?.Value;
+
+    await db.payouts.update(payout.id, {
+      status: 'completed',
+      transactionId: get('TransactionID'),
+      transactionReceipt: get('TransactionReceipt'),
+      transactionAmount: get('TransactionAmount'),
+      b2cRecipientIsRegistered: get('B2CRecipientIsRegisteredCustomer'),
+      completedAt: new Date(),
+    });
+
+    // Advance chama to next round
+    await db.chamas.advanceRound(payout.chamaId);
+
+    // Notify recipient
+    await sendPushNotification({
+      userId: payout.memberId,
+      title: '🎉 Payout received!',
+      body: `KSh ${payout.amount.toLocaleString()} sent to your M-Pesa.`,
+    });
+
+    // Notify all members
+    await broadcastChamaNotification(payout.chamaId, {
+      title: 'Payout disbursed',
+      body: `Round ${payout.roundNumber} complete. Next round starts now!`,
+    });
+
+  } else {
+    await db.payouts.update(payout.id, {
+      status: 'failed',
+      failureReason: ResultDesc,
+    });
+    // Alert admin
+  }
+});
+
+// Timeout handler — called if Safaricom couldn't process in time
+router.post('/api/webhooks/b2c-timeout', async (req, res) => {
+  res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+  const { ConversationID } = req.body?.Result || {};
+  await db.payouts.update({ conversationId: ConversationID }, { status: 'timeout' });
+  // Trigger manual reconciliation alert
+});
+```
+
+---
+
+## 6. Transaction Status Query (Reconciliation)
+
+Use this to check any transaction that has no callback after 5 minutes (network issues, server downtime, etc.).
+
+```javascript
+// services/daraja/queryStatus.js
+export async function queryTransactionStatus(transactionId) {
+  const token = await getAccessToken();
+
+  const payload = {
+    Initiator: process.env.B2C_INITIATOR_NAME,
+    SecurityCredential: process.env.B2C_SECURITY_CREDENTIAL,
+    CommandID: 'TransactionStatusQuery',
+    TransactionID: transactionId,
+    PartyA: process.env.SHORTCODE,
+    IdentifierType: '4',   // 4 = shortcode
+    ResultURL: `${process.env.BASE_URL}/api/webhooks/query-result`,
+    QueueTimeOutURL: `${process.env.BASE_URL}/api/webhooks/query-timeout`,
+    Remarks: 'Reconciliation query',
+    Occasion: '',
+  };
+
+  const res = await fetch(`${BASE_URL}/mpesa/transactionstatus/v1/query`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  return res.json();
+}
+
+// Cron job: reconcile any pending transactions older than 5 minutes
+export async function reconcilePendingTransactions() {
+  const stale = await db.transactions.findStale({ 
+    status: 'pending', 
+    olderThanMinutes: 5 
+  });
+
+  for (const tx of stale) {
+    if (tx.mpesaReceiptNumber) {
+      await queryTransactionStatus(tx.mpesaReceiptNumber);
+    } else {
+      await db.transactions.update(tx.id, { status: 'expired' });
+    }
+  }
+}
+```
+
+---
+
+## 7. Database Schema
+
+```sql
+-- Transactions (contributions + payouts)
+CREATE TABLE transactions (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  chama_id              UUID NOT NULL REFERENCES chamas(id),
+  member_id             UUID NOT NULL REFERENCES users(id),
+  type                  TEXT NOT NULL CHECK (type IN ('contribution', 'payout')),
+  amount                INTEGER NOT NULL,                     -- KES, integer
+  status                TEXT NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending','completed','failed','cancelled','timeout','expired')),
+
+  -- STK Push fields
+  checkout_request_id   TEXT UNIQUE,
+  merchant_request_id   TEXT,
+
+  -- B2C fields
+  conversation_id       TEXT UNIQUE,
+  originator_id         TEXT,
+
+  -- Completion fields
+  mpesa_receipt_number  TEXT UNIQUE,
+  phone_number          TEXT,
+  transaction_date      BIGINT,
+  failure_reason        TEXT,
+
+  created_at            TIMESTAMPTZ DEFAULT NOW(),
+  completed_at          TIMESTAMPTZ
+);
+
+CREATE INDEX idx_transactions_chama ON transactions(chama_id);
+CREATE INDEX idx_transactions_status ON transactions(status);
+CREATE INDEX idx_transactions_checkout ON transactions(checkout_request_id);
+```
+
+---
+
+## 8. Environment Variables
+
+```bash
+# .env — NEVER commit to git
+DARAJA_ENV=sandbox                         # sandbox | production
+
+# OAuth
+CONSUMER_KEY=your_consumer_key
+CONSUMER_SECRET=your_consumer_secret
+
+# STK Push
+SHORTCODE=174379                           # Sandbox default; your paybill in prod
+PASSKEY=bfb279f9aa9bdbcf158e97dd71a467... # From Daraja portal
+
+# B2C
+B2C_INITIATOR_NAME=testapi
+B2C_SECURITY_CREDENTIAL=<rsa_encrypted>   # Generated via generateSecurityCredential.js
+
+# URLs
+BASE_URL=https://your-app.com             # Must be HTTPS
+
+# Infrastructure
+REDIS_URL=redis://localhost:6379
+DATABASE_URL=postgresql://...
+```
+
+---
+
+## 9. Error Codes Reference
+
+| Code | Meaning | Action |
+|------|---------|--------|
+| `0` | Success | Process normally |
+| `1032` | Cancelled by user | Prompt member to retry |
+| `1037` | Timeout — user didn't respond | Prompt member to retry |
+| `1` | Insufficient funds | Notify member |
+| `17` | M-Pesa limit reached | Notify member |
+| `2001` | Wrong PIN | Prompt member to retry |
+| `MpesaDeclined` | Declined by M-Pesa | Contact Safaricom |
+
+---
+
+## 10. Security Checklist
+
+- [ ] Credentials stored in environment variables only — never in code or mobile app
+- [ ] All callback endpoints behind HTTPS
+- [ ] Callback endpoints verify `Content-Type: application/json` and expected payload shape
+- [ ] Idempotency keys stored in Redis for 24 hours to deduplicate Safaricom retries
+- [ ] B2C only callable by admin role (check JWT claims before calling Daraja)
+- [ ] Amount validation: must match the chama's configured contribution amount exactly
+- [ ] Rate limiting on `/api/payments/stk-push` (max 3 attempts per member per 10 minutes)
+- [ ] Payout guard: verify all members paid before disbursing
+
+---
+
+## 11. Sandbox Testing
+
+```
+Sandbox base URL : https://sandbox.safaricom.co.ke
+Test phone       : 254708374149
+Test PIN         : any 4 digits
+Test amount      : any integer
+```
+
+Test these scenarios before going live:
+1. ✅ Successful contribution (ResultCode 0)
+2. ✅ User cancels (ResultCode 1032)
+3. ✅ Timeout — don't respond in 60 seconds (ResultCode 1037)
+4. ✅ Successful B2C payout
+5. ✅ Failed B2C (insufficient float in shortcode)
+6. ✅ Callback received twice (idempotency)
+7. ✅ Server down during callback → reconcile via Transaction Status Query
+
+---
+
+## 12. Go-Live Checklist
+
+1. [ ] All 7 sandbox test cases pass
+2. [ ] Log in to Daraja portal → click **Go Live** on your app
+3. [ ] Upload test case document (Safaricom requirement)
+4. [ ] Submit business registration docs + M-Pesa PayBill agreement
+5. [ ] Swap `BASE_URL` to `https://api.safaricom.co.ke`
+6. [ ] Replace sandbox credentials with production credentials
+7. [ ] Re-generate `B2C_SECURITY_CREDENTIAL` using the **production** certificate
+8. [ ] Run one small live transaction (KES 1) end-to-end before full launch
+
+---
+
+*Daraja API documentation: [developer.safaricom.co.ke](https://developer.safaricom.co.ke)*

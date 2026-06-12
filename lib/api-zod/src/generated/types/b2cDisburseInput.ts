@@ -6,15 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface MpesaPaymentInput {
+export interface B2cDisburseInput {
+  chamaId: number;
+  memberId: number;
   /** @minLength 1 */
   phoneNumber: string;
   /** @minimum 1 */
   amount: number;
-  /** @minLength 1 */
-  accountReference: string;
-  /** @minLength 1 */
-  transactionDesc: string;
-  chamaId?: number;
-  memberId?: number;
+  /** @minimum 1 */
+  roundNumber: number;
 }

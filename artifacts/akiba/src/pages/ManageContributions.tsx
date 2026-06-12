@@ -4,13 +4,15 @@ import {
   useListContributions, getListContributionsQueryKey,
   useRecordContribution, useInitiateMpesaPayment,
   useListMembers, getListMembersQueryKey,
-  useGetChama, getGetChamaQueryKey
+  useGetChama, getGetChamaQueryKey,
+  useListMpesaTransactions, getListMpesaTransactionsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Plus, Wallet, Search, Phone } from "lucide-react";
+import { ChevronLeft, Plus, Wallet, Search, Phone, RefreshCw, CheckCircle2, Clock, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -40,6 +42,7 @@ export default function ManageContributions() {
   const { data: chama } = useGetChama(chamaId, { query: { enabled: !!chamaId, queryKey: getGetChamaQueryKey(chamaId) } });
   const { data: members } = useListMembers(chamaId, { query: { enabled: !!chamaId, queryKey: getListMembersQueryKey(chamaId) } });
   const { data: contributions, isLoading } = useListContributions(chamaId, { query: { enabled: !!chamaId, queryKey: getListContributionsQueryKey(chamaId) } });
+  const { data: txns, isLoading: isTxLoading } = useListMpesaTransactions(chamaId, { query: { enabled: !!chamaId, queryKey: getListMpesaTransactionsQueryKey(chamaId) } });
 
   const recordContribution = useRecordContribution();
   const initiateMpesa = useInitiateMpesaPayment();
@@ -67,13 +70,21 @@ export default function ManageContributions() {
         return;
       }
       initiateMpesa.mutate({
-        data: { phoneNumber: values.phoneNumber, amount: values.amount, accountReference: `CHAMA-${chamaId}`, transactionDesc: "Chama Contribution" }
+        data: {
+          phoneNumber: values.phoneNumber,
+          amount: values.amount,
+          accountReference: `CHAMA-${chamaId}`,
+          transactionDesc: "Chama Contribution",
+          chamaId,
+          memberId: values.memberId,
+        }
       }, {
         onSuccess: () => {
-          toast.success("M-Pesa prompt sent to phone. Awaiting payment.");
-          recordContribution.mutate({ chamaId, data: { memberId: values.memberId, amount: values.amount, status: "pending" } }, {
-            onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListContributionsQueryKey(chamaId) }); setIsAddOpen(false); form.reset(); }
-          });
+          toast.success("M-Pesa prompt sent! Member should approve the payment on their phone.");
+          queryClient.invalidateQueries({ queryKey: getListContributionsQueryKey(chamaId) });
+          queryClient.invalidateQueries({ queryKey: getListMpesaTransactionsQueryKey(chamaId) });
+          setIsAddOpen(false);
+          form.reset();
         },
         onError: () => toast.error("Failed to initiate M-Pesa payment")
       });
@@ -95,7 +106,14 @@ export default function ManageContributions() {
     (c.mpesaRef && c.mpesaRef.toLowerCase().includes(search.toLowerCase()))
   );
 
+  const filteredTxns = txns?.filter(t =>
+    t.type === "contribution" &&
+    ((t.memberName ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    (t.mpesaReceiptNumber ?? "").toLowerCase().includes(search.toLowerCase()))
+  );
+
   const totalCollected = contributions?.filter(c => c.status === "completed").reduce((s, c) => s + c.amount, 0) || 0;
+  const pendingCount = txns?.filter(t => t.status === "pending" && t.type === "contribution").length || 0;
 
   return (
     <div className="pb-8">
@@ -188,17 +206,23 @@ export default function ManageContributions() {
           </Dialog>
         </div>
 
-        {/* Stats strip with image */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="sm:col-span-1 rounded-xl overflow-hidden relative h-28">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="rounded-xl overflow-hidden relative h-28">
             <img src="https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=400&q=80&fit=crop" alt="M-Pesa" className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-green-900/70 flex flex-col items-center justify-center text-white">
               <p className="text-xs font-medium opacity-80">Total Collected</p>
               <p className="text-2xl font-bold">KES {totalCollected.toLocaleString()}</p>
             </div>
           </div>
+          <div className="flex items-center gap-3 bg-amber-50 dark:bg-amber-950/30 rounded-xl px-4 border border-amber-200 dark:border-amber-800">
+            <Clock className="w-8 h-8 text-amber-500 shrink-0" />
+            <div>
+              <p className="text-xs text-muted-foreground">Awaiting M-Pesa</p>
+              <p className="text-2xl font-bold text-amber-600">{pendingCount}</p>
+            </div>
+          </div>
           <div className="sm:col-span-2">
-            <div className="relative">
+            <div className="relative h-full flex items-center">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search by member or reference..."
@@ -210,36 +234,111 @@ export default function ManageContributions() {
           </div>
         </div>
 
-        <Card className="shadow-sm">
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="p-8 text-center animate-pulse text-muted-foreground">Loading contributions...</div>
-            ) : filteredCont && filteredCont.length > 0 ? (
-              <div className="divide-y">
-                <div className="grid grid-cols-12 gap-4 p-4 text-sm font-medium text-muted-foreground bg-muted/30">
-                  <div className="col-span-4">Member</div>
-                  <div className="col-span-3">Date</div>
-                  <div className="col-span-3">Reference</div>
-                  <div className="col-span-2 text-right">Amount / Status</div>
-                </div>
-                {filteredCont.map(c => (
-                  <div key={c.id} className="grid grid-cols-12 gap-4 p-4 items-center hover:bg-muted/20 transition-colors text-sm">
-                    <div className="col-span-4 font-medium">{c.memberName}</div>
-                    <div className="col-span-3 text-muted-foreground">{new Date(c.createdAt).toLocaleString()}</div>
-                    <div className="col-span-3 font-mono text-xs">{c.mpesaRef || "-"}</div>
-                    <div className="col-span-2 text-right">
-                      <div className="font-semibold text-foreground mb-1">KES {c.amount.toLocaleString()}</div>
-                      <StatusBadge status={c.status} />
+        <Tabs defaultValue="contributions">
+          <TabsList className="w-full justify-start border-b rounded-none h-auto p-0 bg-transparent mb-4">
+            <TabsTrigger value="contributions" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-2 px-5 shadow-none">
+              Contributions ({contributions?.length ?? 0})
+            </TabsTrigger>
+            <TabsTrigger value="mpesa" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-2 px-5 shadow-none">
+              M-Pesa Log ({txns?.filter(t => t.type === "contribution").length ?? 0})
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="contributions" className="mt-0">
+            <Card className="shadow-sm">
+              <CardContent className="p-0">
+                {isLoading ? (
+                  <div className="p-8 text-center animate-pulse text-muted-foreground">Loading contributions...</div>
+                ) : filteredCont && filteredCont.length > 0 ? (
+                  <div className="divide-y">
+                    <div className="grid grid-cols-12 gap-4 p-4 text-sm font-medium text-muted-foreground bg-muted/30">
+                      <div className="col-span-4">Member</div>
+                      <div className="col-span-3">Date</div>
+                      <div className="col-span-3">Reference</div>
+                      <div className="col-span-2 text-right">Amount / Status</div>
                     </div>
+                    {filteredCont.map(c => (
+                      <div key={c.id} className="grid grid-cols-12 gap-4 p-4 items-center hover:bg-muted/20 transition-colors text-sm">
+                        <div className="col-span-4 font-medium">{c.memberName}</div>
+                        <div className="col-span-3 text-muted-foreground">{new Date(c.createdAt).toLocaleString()}</div>
+                        <div className="col-span-3 font-mono text-xs">{c.mpesaRef || "-"}</div>
+                        <div className="col-span-2 text-right">
+                          <div className="font-semibold text-foreground mb-1">KES {c.amount.toLocaleString()}</div>
+                          <StatusBadge status={c.status} />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState icon={Wallet} title="No Contributions" description="No contributions found." />
-            )}
-          </CardContent>
-        </Card>
+                ) : (
+                  <EmptyState icon={Wallet} title="No Contributions" description="No contributions found." />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="mpesa" className="mt-0">
+            <Card className="shadow-sm">
+              <CardHeader className="flex flex-row justify-between items-center border-b pb-4">
+                <CardTitle className="text-base">M-Pesa STK Push Log</CardTitle>
+                <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => queryClient.invalidateQueries({ queryKey: getListMpesaTransactionsQueryKey(chamaId) })}>
+                  <RefreshCw className="w-3 h-3" /> Refresh
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                {isTxLoading ? (
+                  <div className="p-8 text-center animate-pulse text-muted-foreground">Loading transactions...</div>
+                ) : filteredTxns && filteredTxns.length > 0 ? (
+                  <div className="divide-y">
+                    <div className="grid grid-cols-12 gap-2 p-4 text-xs font-semibold text-muted-foreground bg-muted/30 uppercase tracking-wide">
+                      <div className="col-span-3">Member</div>
+                      <div className="col-span-2">Phone</div>
+                      <div className="col-span-3">Receipt / ID</div>
+                      <div className="col-span-2">Date</div>
+                      <div className="col-span-2 text-right">Amount / Status</div>
+                    </div>
+                    {filteredTxns.map(tx => (
+                      <div key={tx.id} className="grid grid-cols-12 gap-2 p-4 items-center hover:bg-muted/20 transition-colors text-sm">
+                        <div className="col-span-3 font-medium">{tx.memberName ?? "—"}</div>
+                        <div className="col-span-2 text-xs text-muted-foreground font-mono">{tx.phoneNumber ?? "—"}</div>
+                        <div className="col-span-3">
+                          {tx.mpesaReceiptNumber
+                            ? <span className="font-mono text-xs bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded">{tx.mpesaReceiptNumber}</span>
+                            : <span className="text-xs text-muted-foreground font-mono">{tx.checkoutRequestId?.slice(-12) ?? "—"}</span>
+                          }
+                        </div>
+                        <div className="col-span-2 text-xs text-muted-foreground">{new Date(tx.createdAt).toLocaleString()}</div>
+                        <div className="col-span-2 text-right">
+                          <div className="font-semibold mb-1">KES {tx.amount.toLocaleString()}</div>
+                          <TxStatusBadge status={tx.status} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState icon={Phone} title="No M-Pesa Transactions" description="STK Push transactions will appear here." />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
+  );
+}
+
+function TxStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { cls: string; label: string; icon: React.ReactNode }> = {
+    completed: { cls: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300", label: "Paid", icon: <CheckCircle2 className="w-3 h-3 inline mr-0.5" /> },
+    pending: { cls: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300", label: "Pending", icon: <Clock className="w-3 h-3 inline mr-0.5" /> },
+    failed: { cls: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300", label: "Failed", icon: <XCircle className="w-3 h-3 inline mr-0.5" /> },
+    cancelled: { cls: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300", label: "Cancelled", icon: <XCircle className="w-3 h-3 inline mr-0.5" /> },
+    timeout: { cls: "bg-orange-100 text-orange-700", label: "Timed Out", icon: <Clock className="w-3 h-3 inline mr-0.5" /> },
+    expired: { cls: "bg-gray-100 text-gray-600", label: "Expired", icon: null },
+  };
+  const v = map[status] ?? { cls: "bg-gray-100 text-gray-600", label: status, icon: null };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${v.cls}`}>
+      {v.icon}{v.label}
+    </span>
   );
 }

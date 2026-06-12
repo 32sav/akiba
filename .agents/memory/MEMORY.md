@@ -1,1 +1,1 @@
-- [Clerk Auth Setup](clerk-auth-setup.md) — Clerk provisioned and wired; Tailwind v4 needs optimize:false + @layer before tailwindcss import.
+- [Daraja API integration](daraja-integration.md) — sandbox base URL, token caching, dueDate Zod bug, callback-first pattern

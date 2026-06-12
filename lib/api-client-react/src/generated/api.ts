@@ -20,12 +20,15 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  B2cDisburseInput,
+  B2cDisburseResult,
   Chama,
   ChamaInput,
   ChamaSummary,
   ChamaUpdate,
   Contribution,
   ContributionInput,
+  DarajaWebhookPayload,
   HealthStatus,
   Loan,
   LoanInput,
@@ -36,6 +39,8 @@ import type {
   MpesaCallbackPayload,
   MpesaPaymentInput,
   MpesaPaymentResult,
+  MpesaTransaction,
+  ReconcilePendingTransactions200,
   Repayment,
   RepaymentInput
 } from './api.schemas';
@@ -1560,6 +1565,83 @@ export const useRecordRepayment = <TError = ErrorType<unknown>,
       return useMutation(getRecordRepaymentMutationOptions(options));
     }
 
+export const getListMpesaTransactionsUrl = (chamaId: number,) => {
+
+
+
+
+  return `/api/chamas/${chamaId}/transactions`
+}
+
+/**
+ * @summary List M-Pesa transaction history for a chama
+ */
+export const listMpesaTransactions = async (chamaId: number, options?: RequestInit): Promise<MpesaTransaction[]> => {
+
+  return customFetch<MpesaTransaction[]>(getListMpesaTransactionsUrl(chamaId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListMpesaTransactionsQueryKey = (chamaId: number,) => {
+    return [
+    `/api/chamas/${chamaId}/transactions`
+    ] as const;
+    }
+
+
+export const getListMpesaTransactionsQueryOptions = <TData = Awaited<ReturnType<typeof listMpesaTransactions>>, TError = ErrorType<unknown>>(chamaId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMpesaTransactions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMpesaTransactionsQueryKey(chamaId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMpesaTransactions>>> = ({ signal }) => listMpesaTransactions(chamaId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(chamaId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMpesaTransactions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMpesaTransactionsQueryResult = NonNullable<Awaited<ReturnType<typeof listMpesaTransactions>>>
+export type ListMpesaTransactionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List M-Pesa transaction history for a chama
+ */
+
+export function useListMpesaTransactions<TData = Awaited<ReturnType<typeof listMpesaTransactions>>, TError = ErrorType<unknown>>(
+ chamaId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMpesaTransactions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMpesaTransactionsQueryOptions(chamaId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
 export const getInitiateMpesaPaymentUrl = () => {
 
 
@@ -1640,7 +1722,7 @@ export const getMpesaCallbackUrl = () => {
 }
 
 /**
- * @summary M-Pesa payment callback (Safaricom webhook)
+ * @summary M-Pesa STK Push callback (Safaricom webhook)
  */
 export const mpesaCallback = async (mpesaCallbackPayload: MpesaCallbackPayload, options?: RequestInit): Promise<void> => {
 
@@ -1689,7 +1771,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type MpesaCallbackMutationError = ErrorType<unknown>
 
     /**
- * @summary M-Pesa payment callback (Safaricom webhook)
+ * @summary M-Pesa STK Push callback (Safaricom webhook)
  */
 export const useMpesaCallback = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof mpesaCallback>>, TError,{data: BodyType<MpesaCallbackPayload>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -1700,5 +1782,288 @@ export const useMpesaCallback = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getMpesaCallbackMutationOptions(options));
+    }
+
+export const getDisburseB2cPayoutUrl = () => {
+
+
+
+
+  return `/api/mpesa/disburse`
+}
+
+/**
+ * @summary Disburse B2C payout to a member
+ */
+export const disburseB2cPayout = async (b2cDisburseInput: B2cDisburseInput, options?: RequestInit): Promise<B2cDisburseResult> => {
+
+  return customFetch<B2cDisburseResult>(getDisburseB2cPayoutUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      b2cDisburseInput,)
+  }
+);}
+
+
+
+
+export const getDisburseB2cPayoutMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disburseB2cPayout>>, TError,{data: BodyType<B2cDisburseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof disburseB2cPayout>>, TError,{data: BodyType<B2cDisburseInput>}, TContext> => {
+
+const mutationKey = ['disburseB2cPayout'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof disburseB2cPayout>>, {data: BodyType<B2cDisburseInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  disburseB2cPayout(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DisburseB2cPayoutMutationResult = NonNullable<Awaited<ReturnType<typeof disburseB2cPayout>>>
+    export type DisburseB2cPayoutMutationBody = BodyType<B2cDisburseInput>
+    export type DisburseB2cPayoutMutationError = ErrorType<void>
+
+    /**
+ * @summary Disburse B2C payout to a member
+ */
+export const useDisburseB2cPayout = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof disburseB2cPayout>>, TError,{data: BodyType<B2cDisburseInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof disburseB2cPayout>>,
+        TError,
+        {data: BodyType<B2cDisburseInput>},
+        TContext
+      > => {
+      return useMutation(getDisburseB2cPayoutMutationOptions(options));
+    }
+
+export const getB2cResultCallbackUrl = () => {
+
+
+
+
+  return `/api/mpesa/webhooks/b2c-result`
+}
+
+/**
+ * @summary B2C payout result callback (Safaricom webhook)
+ */
+export const b2cResultCallback = async (darajaWebhookPayload: DarajaWebhookPayload, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getB2cResultCallbackUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      darajaWebhookPayload,)
+  }
+);}
+
+
+
+
+export const getB2cResultCallbackMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof b2cResultCallback>>, TError,{data: BodyType<DarajaWebhookPayload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof b2cResultCallback>>, TError,{data: BodyType<DarajaWebhookPayload>}, TContext> => {
+
+const mutationKey = ['b2cResultCallback'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof b2cResultCallback>>, {data: BodyType<DarajaWebhookPayload>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  b2cResultCallback(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type B2cResultCallbackMutationResult = NonNullable<Awaited<ReturnType<typeof b2cResultCallback>>>
+    export type B2cResultCallbackMutationBody = BodyType<DarajaWebhookPayload>
+    export type B2cResultCallbackMutationError = ErrorType<unknown>
+
+    /**
+ * @summary B2C payout result callback (Safaricom webhook)
+ */
+export const useB2cResultCallback = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof b2cResultCallback>>, TError,{data: BodyType<DarajaWebhookPayload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof b2cResultCallback>>,
+        TError,
+        {data: BodyType<DarajaWebhookPayload>},
+        TContext
+      > => {
+      return useMutation(getB2cResultCallbackMutationOptions(options));
+    }
+
+export const getB2cTimeoutCallbackUrl = () => {
+
+
+
+
+  return `/api/mpesa/webhooks/b2c-timeout`
+}
+
+/**
+ * @summary B2C payout timeout callback (Safaricom webhook)
+ */
+export const b2cTimeoutCallback = async (darajaWebhookPayload: DarajaWebhookPayload, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getB2cTimeoutCallbackUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      darajaWebhookPayload,)
+  }
+);}
+
+
+
+
+export const getB2cTimeoutCallbackMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof b2cTimeoutCallback>>, TError,{data: BodyType<DarajaWebhookPayload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof b2cTimeoutCallback>>, TError,{data: BodyType<DarajaWebhookPayload>}, TContext> => {
+
+const mutationKey = ['b2cTimeoutCallback'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof b2cTimeoutCallback>>, {data: BodyType<DarajaWebhookPayload>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  b2cTimeoutCallback(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type B2cTimeoutCallbackMutationResult = NonNullable<Awaited<ReturnType<typeof b2cTimeoutCallback>>>
+    export type B2cTimeoutCallbackMutationBody = BodyType<DarajaWebhookPayload>
+    export type B2cTimeoutCallbackMutationError = ErrorType<unknown>
+
+    /**
+ * @summary B2C payout timeout callback (Safaricom webhook)
+ */
+export const useB2cTimeoutCallback = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof b2cTimeoutCallback>>, TError,{data: BodyType<DarajaWebhookPayload>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof b2cTimeoutCallback>>,
+        TError,
+        {data: BodyType<DarajaWebhookPayload>},
+        TContext
+      > => {
+      return useMutation(getB2cTimeoutCallbackMutationOptions(options));
+    }
+
+export const getReconcilePendingTransactionsUrl = () => {
+
+
+
+
+  return `/api/mpesa/reconcile`
+}
+
+/**
+ * @summary Expire stale pending transactions older than 5 minutes
+ */
+export const reconcilePendingTransactions = async ( options?: RequestInit): Promise<ReconcilePendingTransactions200> => {
+
+  return customFetch<ReconcilePendingTransactions200>(getReconcilePendingTransactionsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getReconcilePendingTransactionsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reconcilePendingTransactions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reconcilePendingTransactions>>, TError,void, TContext> => {
+
+const mutationKey = ['reconcilePendingTransactions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reconcilePendingTransactions>>, void> = () => {
+
+
+          return  reconcilePendingTransactions(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReconcilePendingTransactionsMutationResult = NonNullable<Awaited<ReturnType<typeof reconcilePendingTransactions>>>
+
+    export type ReconcilePendingTransactionsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Expire stale pending transactions older than 5 minutes
+ */
+export const useReconcilePendingTransactions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reconcilePendingTransactions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reconcilePendingTransactions>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getReconcilePendingTransactionsMutationOptions(options));
     }
 

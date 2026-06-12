@@ -259,6 +259,8 @@ export interface MpesaPaymentInput {
   accountReference: string;
   /** @minLength 1 */
   transactionDesc: string;
+  chamaId?: number;
+  memberId?: number;
 }
 
 export interface MpesaPaymentResult {
@@ -267,6 +269,8 @@ export interface MpesaPaymentResult {
   responseCode: string;
   responseDescription: string;
   customerMessage: string;
+  /** @nullable */
+  contributionId?: number | null;
 }
 
 export type MpesaCallbackPayloadBody = { [key: string]: unknown };
@@ -274,4 +278,82 @@ export type MpesaCallbackPayloadBody = { [key: string]: unknown };
 export interface MpesaCallbackPayload {
   Body?: MpesaCallbackPayloadBody;
 }
+
+export type MpesaTransactionType = typeof MpesaTransactionType[keyof typeof MpesaTransactionType];
+
+
+export const MpesaTransactionType = {
+  contribution: 'contribution',
+  payout: 'payout',
+} as const;
+
+export type MpesaTransactionStatus = typeof MpesaTransactionStatus[keyof typeof MpesaTransactionStatus];
+
+
+export const MpesaTransactionStatus = {
+  pending: 'pending',
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+  timeout: 'timeout',
+  expired: 'expired',
+} as const;
+
+export interface MpesaTransaction {
+  id: number;
+  chamaId: number;
+  /** @nullable */
+  memberId?: number | null;
+  /** @nullable */
+  memberName?: string | null;
+  /** @nullable */
+  contributionId?: number | null;
+  type: MpesaTransactionType;
+  amount: number;
+  /** @nullable */
+  phoneNumber?: string | null;
+  status: MpesaTransactionStatus;
+  /** @nullable */
+  mpesaReceiptNumber?: string | null;
+  /** @nullable */
+  checkoutRequestId?: string | null;
+  /** @nullable */
+  conversationId?: string | null;
+  /** @nullable */
+  failureReason?: string | null;
+  createdAt: string;
+  /** @nullable */
+  completedAt?: string | null;
+}
+
+export interface B2cDisburseInput {
+  chamaId: number;
+  memberId: number;
+  /** @minLength 1 */
+  phoneNumber: string;
+  /** @minimum 1 */
+  amount: number;
+  /** @minimum 1 */
+  roundNumber: number;
+}
+
+export interface B2cDisburseResult {
+  conversationId: string;
+  originatorConversationId: string;
+  responseCode: string;
+  responseDescription: string;
+}
+
+export type DarajaWebhookPayloadResult = { [key: string]: unknown };
+
+/**
+ * Generic Safaricom Daraja webhook payload
+ */
+export interface DarajaWebhookPayload {
+  Result?: DarajaWebhookPayloadResult;
+}
+
+export type ReconcilePendingTransactions200 = {
+  expiredCount: number;
+};
 

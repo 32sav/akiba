@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, Link } from "wouter";
 import {
   useGetChama, getGetChamaQueryKey,
@@ -5,42 +6,96 @@ import {
   useListMembers, getListMembersQueryKey,
   useListContributions, getListContributionsQueryKey,
   useListLoans, getListLoansQueryKey,
+  useListMpesaTransactions, getListMpesaTransactionsQueryKey,
+  useDisburseB2cPayout,
 } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Users, Wallet, FileText, ArrowUpRight, ArrowDownRight,
-  Activity, PlusCircle, Settings, ChevronLeft
+  Activity, PlusCircle, Settings, ChevronLeft, SendHorizonal,
+  CheckCircle2, Clock, XCircle, Phone, RefreshCw
 } from "lucide-react";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { PageHero } from "@/components/shared/PageHero";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import * as z from "zod";
+
+const disburseSchema = z.object({
+  memberId: z.coerce.number().min(1, "Member is required"),
+  phoneNumber: z.string().min(9, "Phone number is required"),
+  amount: z.coerce.number().min(1, "Amount must be greater than 0"),
+  roundNumber: z.coerce.number().min(1, "Round number is required"),
+});
 
 export default function ChamaDetail() {
   const params = useParams();
   const id = parseInt(params.id || "0", 10);
+  const queryClient = useQueryClient();
+  const [isDisburseOpen, setIsDisburseOpen] = useState(false);
 
   const { data: chama, isLoading: isChamaLoading } = useGetChama(id, {
     query: { enabled: !!id, queryKey: getGetChamaQueryKey(id) }
   });
-
   const { data: summary, isLoading: isSummaryLoading } = useGetChamaSummary(id, {
     query: { enabled: !!id, queryKey: getGetChamaSummaryQueryKey(id) }
   });
-
   const { data: members, isLoading: isMembersLoading } = useListMembers(id, {
     query: { enabled: !!id, queryKey: getListMembersQueryKey(id) }
   });
-
   const { data: contributions, isLoading: isContLoading } = useListContributions(id, {
     query: { enabled: !!id, queryKey: getListContributionsQueryKey(id) }
   });
-
   const { data: loans, isLoading: isLoansLoading } = useListLoans(id, {
     query: { enabled: !!id, queryKey: getListLoansQueryKey(id) }
   });
+  const { data: txns, isLoading: isTxLoading } = useListMpesaTransactions(id, {
+    query: { enabled: !!id, queryKey: getListMpesaTransactionsQueryKey(id) }
+  });
+
+  const disburse = useDisburseB2cPayout();
+
+  const form = useForm<z.infer<typeof disburseSchema>>({
+    resolver: zodResolver(disburseSchema),
+    defaultValues: { amount: 0, roundNumber: 1, phoneNumber: "" },
+  });
+
+  const handleMemberChange = (val: string) => {
+    const memId = parseInt(val, 10);
+    form.setValue("memberId", memId);
+    const member = members?.find(m => m.id === memId);
+    if (member?.phoneNumber) form.setValue("phoneNumber", member.phoneNumber);
+  };
+
+  const onDisburse = (values: z.infer<typeof disburseSchema>) => {
+    disburse.mutate({
+      data: {
+        chamaId: id,
+        memberId: values.memberId,
+        phoneNumber: values.phoneNumber,
+        amount: values.amount,
+        roundNumber: values.roundNumber,
+      }
+    }, {
+      onSuccess: () => {
+        toast.success("Payout queued! Safaricom will process the transfer shortly.");
+        queryClient.invalidateQueries({ queryKey: getListMpesaTransactionsQueryKey(id) });
+        setIsDisburseOpen(false);
+        form.reset();
+      },
+      onError: () => toast.error("Failed to initiate B2C payout"),
+    });
+  };
 
   if (isChamaLoading || !chama) {
     return (
@@ -71,7 +126,15 @@ export default function ChamaDetail() {
           <Link href="/chamas" className="text-muted-foreground hover:text-foreground flex items-center text-sm font-medium transition-colors">
             <ChevronLeft className="w-4 h-4 mr-1" /> Back to Chamas
           </Link>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              variant="default"
+              size="sm"
+              className="gap-2 bg-green-600 hover:bg-green-700"
+              onClick={() => { setIsDisburseOpen(true); if (chama?.contributionAmount && members?.length) form.setValue("amount", chama.contributionAmount * members.length); }}
+            >
+              <SendHorizonal className="w-4 h-4" /> Disburse Payout
+            </Button>
             <Link href={`/chamas/${id}/members`}>
               <Button variant="outline" size="sm" className="gap-2">
                 <Users className="w-4 h-4" /> Manage Members
@@ -142,6 +205,9 @@ export default function ChamaDetail() {
             <TabsTrigger value="members" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6 shadow-none">Members ({members?.length || 0})</TabsTrigger>
             <TabsTrigger value="contributions" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6 shadow-none">Contributions</TabsTrigger>
             <TabsTrigger value="loans" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6 shadow-none">Loans</TabsTrigger>
+            <TabsTrigger value="transactions" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6 shadow-none">
+              M-Pesa {txns && txns.length > 0 ? `(${txns.length})` : ""}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-0 outline-none">
@@ -312,8 +378,126 @@ export default function ChamaDetail() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="transactions" className="mt-0 outline-none">
+            <Card className="shadow-sm">
+              <CardHeader className="flex flex-row justify-between items-center border-b pb-4">
+                <CardTitle className="text-lg">M-Pesa Transaction History</CardTitle>
+                <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => queryClient.invalidateQueries({ queryKey: getListMpesaTransactionsQueryKey(id) })}>
+                  <RefreshCw className="w-3 h-3" /> Refresh
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                {isTxLoading ? (
+                  <div className="p-8 text-center animate-pulse text-muted-foreground">Loading transactions...</div>
+                ) : txns && txns.length > 0 ? (
+                  <div className="divide-y">
+                    <div className="grid grid-cols-12 gap-2 p-4 text-xs font-semibold text-muted-foreground bg-muted/30 uppercase tracking-wide">
+                      <div className="col-span-1">Type</div>
+                      <div className="col-span-2">Member</div>
+                      <div className="col-span-2">Phone</div>
+                      <div className="col-span-3">Receipt</div>
+                      <div className="col-span-2">Date</div>
+                      <div className="col-span-2 text-right">Amount / Status</div>
+                    </div>
+                    {txns.map(tx => (
+                      <div key={tx.id} className="grid grid-cols-12 gap-2 p-4 items-center hover:bg-muted/20 transition-colors text-sm">
+                        <div className="col-span-1">
+                          <span className={`inline-flex px-1.5 py-0.5 rounded text-xs font-medium ${tx.type === "contribution" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"}`}>
+                            {tx.type === "contribution" ? "C2B" : "B2C"}
+                          </span>
+                        </div>
+                        <div className="col-span-2 font-medium truncate">{tx.memberName ?? "—"}</div>
+                        <div className="col-span-2 text-xs text-muted-foreground font-mono">{tx.phoneNumber ?? "—"}</div>
+                        <div className="col-span-3">
+                          {tx.mpesaReceiptNumber
+                            ? <span className="font-mono text-xs bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-300 px-2 py-0.5 rounded">{tx.mpesaReceiptNumber}</span>
+                            : <span className="text-xs text-muted-foreground font-mono">{(tx.checkoutRequestId ?? tx.conversationId ?? "—").slice(-12)}</span>
+                          }
+                        </div>
+                        <div className="col-span-2 text-xs text-muted-foreground">{new Date(tx.createdAt).toLocaleString()}</div>
+                        <div className="col-span-2 text-right">
+                          <div className="font-semibold mb-1">KES {tx.amount.toLocaleString()}</div>
+                          <TxStatusBadge status={tx.status} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState icon={Phone} title="No Transactions" description="M-Pesa payments and payouts will appear here." />
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={isDisburseOpen} onOpenChange={setIsDisburseOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <SendHorizonal className="w-5 h-5 text-green-600" />
+              Disburse B2C Payout
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-2">
+            Send the chama pool directly to a member's M-Pesa. Safaricom will process the transfer within minutes.
+          </p>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onDisburse)} className="space-y-4">
+              <FormField control={form.control} name="memberId" render={() => (
+                <FormItem>
+                  <FormLabel>Recipient Member</FormLabel>
+                  <Select onValueChange={handleMemberChange}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Select member" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {members?.map(m => <SelectItem key={m.id} value={m.id.toString()}>{m.name} — {m.phoneNumber}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="phoneNumber" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>M-Pesa Phone Number</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input className="pl-9" placeholder="2547XXXXXXXX" {...field} />
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="amount" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Amount (KES)</FormLabel>
+                    <FormControl><Input type="number" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="roundNumber" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Round Number</FormLabel>
+                    <FormControl><Input type="number" min={1} {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-800 dark:text-amber-300">
+                ⚠️ This sends real money via M-Pesa. Ensure the phone number and amount are correct before submitting.
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsDisburseOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={disburse.isPending} className="bg-green-600 hover:bg-green-700">
+                  {disburse.isPending ? "Sending..." : "Send Payout"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -323,10 +507,26 @@ function BadgeRole({ role }: { role: string }) {
   if (role === "chairperson") cls = "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300";
   if (role === "treasurer") cls = "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300";
   if (role === "secretary") cls = "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300";
-
   return (
     <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${cls}`}>
       {role}
+    </span>
+  );
+}
+
+function TxStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { cls: string; label: string; icon?: React.ReactNode }> = {
+    completed: { cls: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300", label: "Paid", icon: <CheckCircle2 className="w-3 h-3 inline mr-0.5" /> },
+    pending: { cls: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300", label: "Pending", icon: <Clock className="w-3 h-3 inline mr-0.5" /> },
+    failed: { cls: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300", label: "Failed", icon: <XCircle className="w-3 h-3 inline mr-0.5" /> },
+    cancelled: { cls: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300", label: "Cancelled", icon: <XCircle className="w-3 h-3 inline mr-0.5" /> },
+    timeout: { cls: "bg-orange-100 text-orange-700", label: "Timed Out" },
+    expired: { cls: "bg-gray-100 text-gray-600", label: "Expired" },
+  };
+  const v = map[status] ?? { cls: "bg-gray-100 text-gray-600", label: status };
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${v.cls}`}>
+      {v.icon}{v.label}
     </span>
   );
 }

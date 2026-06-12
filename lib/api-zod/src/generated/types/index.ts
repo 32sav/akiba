@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './b2cDisburseInput';
+export * from './b2cDisburseResult';
 export * from './chama';
 export * from './chamaInput';
 export * from './chamaInputMeetingFrequency';
@@ -17,6 +19,8 @@ export * from './contribution';
 export * from './contributionInput';
 export * from './contributionInputStatus';
 export * from './contributionStatus';
+export * from './darajaWebhookPayload';
+export * from './darajaWebhookPayloadResult';
 export * from './healthStatus';
 export * from './loan';
 export * from './loanInput';
@@ -33,5 +37,9 @@ export * from './mpesaCallbackPayload';
 export * from './mpesaCallbackPayloadBody';
 export * from './mpesaPaymentInput';
 export * from './mpesaPaymentResult';
+export * from './mpesaTransaction';
+export * from './mpesaTransactionStatus';
+export * from './mpesaTransactionType';
+export * from './reconcilePendingTransactions200';
 export * from './repayment';
 export * from './repaymentInput';
