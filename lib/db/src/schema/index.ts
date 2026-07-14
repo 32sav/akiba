@@ -6,3 +6,4 @@ export * from "./repayments";
 export * from "./mpesaTransactions";
 export * from "./invitations";
 export * from "./repaymentPlans";
+export * from "./reminders";

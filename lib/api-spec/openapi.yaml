@@ -555,6 +555,64 @@ paths:
               schema:
                 $ref: "#/components/schemas/RepaymentPlanEntry"
 
+  /chamas/{chamaId}/loans/{loanId}/remind:
+    post:
+      operationId: sendLoanReminder
+      tags: [loans]
+      summary: Send an SMS reminder to a member about their outstanding loan
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoanReminderInput"
+      responses:
+        "201":
+          description: Reminder sent (or simulated if SMS not configured)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoanReminder"
+        "404":
+          description: Loan not found
+
+  /chamas/{chamaId}/loans/{loanId}/reminders:
+    get:
+      operationId: listLoanReminders
+      tags: [loans]
+      summary: List reminder history for a loan
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of reminders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LoanReminder"
+
   /chamas/{chamaId}/invitations:
     post:
       operationId: createInvitation
