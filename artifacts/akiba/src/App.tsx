@@ -19,6 +19,7 @@ import ManageContributions from "@/pages/ManageContributions";
 import ManageLoans from "@/pages/ManageLoans";
 import LoanDetail from "@/pages/LoanDetail";
 import JoinChama from "@/pages/JoinChama";
+import OutstandingBalances from "@/pages/OutstandingBalances";
 
 const queryClient = new QueryClient();
 
@@ -156,6 +157,7 @@ function AppRoutes() {
         <Route path="/chamas/:id/contributions" component={ManageContributions} />
         <Route path="/chamas/:id/loans" component={ManageLoans} />
         <Route path="/chamas/:id/loans/:loanId" component={LoanDetail} />
+        <Route path="/outstanding" component={OutstandingBalances} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
@@ -226,6 +228,7 @@ function ClerkProviderWithRoutes() {
             <Route path="/dashboard" component={DashboardGate} />
             <Route path="/chamas" component={DashboardGate} />
             <Route path="/chamas/:rest*" component={DashboardGate} />
+            <Route path="/outstanding" component={DashboardGate} />
             <Route component={NotFound} />
           </Switch>
           <Toaster />

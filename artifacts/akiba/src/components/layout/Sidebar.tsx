@@ -1,10 +1,11 @@
 import { Link, useLocation } from "wouter";
-import { Users, LayoutDashboard, Shield, LogOut } from "lucide-react";
+import { Users, LayoutDashboard, Shield, LogOut, TrendingDown } from "lucide-react";
 import { useClerk, useUser } from "@clerk/react";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "My Chamas", href: "/chamas", icon: Users },
+  { name: "Outstanding Balances", href: "/outstanding", icon: TrendingDown },
 ];
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
