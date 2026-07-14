@@ -8,7 +8,7 @@ import {
   useListMpesaTransactions, getListMpesaTransactionsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Plus, Wallet, Search, Phone, RefreshCw, CheckCircle2, Clock, XCircle } from "lucide-react";
+import { ChevronLeft, Plus, Wallet, Search, Phone, RefreshCw, CheckCircle2, Clock, XCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,7 +42,17 @@ export default function ManageContributions() {
   const { data: chama } = useGetChama(chamaId, { query: { enabled: !!chamaId, queryKey: getGetChamaQueryKey(chamaId) } });
   const { data: members } = useListMembers(chamaId, { query: { enabled: !!chamaId, queryKey: getListMembersQueryKey(chamaId) } });
   const { data: contributions, isLoading } = useListContributions(chamaId, { query: { enabled: !!chamaId, queryKey: getListContributionsQueryKey(chamaId) } });
-  const { data: txns, isLoading: isTxLoading } = useListMpesaTransactions(chamaId, { query: { enabled: !!chamaId, queryKey: getListMpesaTransactionsQueryKey(chamaId) } });
+  const { data: txns, isLoading: isTxLoading } = useListMpesaTransactions(chamaId, {
+    query: {
+      enabled: !!chamaId,
+      queryKey: getListMpesaTransactionsQueryKey(chamaId),
+      // Auto-refresh every 10s when there are pending STK push transactions
+      refetchInterval: (data) => {
+        const pending = (data as { status: string }[] | undefined)?.filter(t => t.status === "pending").length ?? 0;
+        return pending > 0 ? 10000 : false;
+      },
+    }
+  });
 
   const recordContribution = useRecordContribution();
   const initiateMpesa = useInitiateMpesaPayment();
@@ -80,7 +90,7 @@ export default function ManageContributions() {
         }
       }, {
         onSuccess: () => {
-          toast.success("M-Pesa prompt sent! Member should approve the payment on their phone.");
+          toast.success("M-Pesa prompt sent! The status will update automatically.");
           queryClient.invalidateQueries({ queryKey: getListContributionsQueryKey(chamaId) });
           queryClient.invalidateQueries({ queryKey: getListMpesaTransactionsQueryKey(chamaId) });
           setIsAddOpen(false);
@@ -114,6 +124,7 @@ export default function ManageContributions() {
 
   const totalCollected = contributions?.filter(c => c.status === "completed").reduce((s, c) => s + c.amount, 0) || 0;
   const pendingCount = txns?.filter(t => t.status === "pending" && t.type === "contribution").length || 0;
+  const isAutoRefreshing = pendingCount > 0;
 
   return (
     <div className="pb-8">
@@ -214,11 +225,15 @@ export default function ManageContributions() {
               <p className="text-2xl font-bold">KES {totalCollected.toLocaleString()}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 bg-amber-50 dark:bg-amber-950/30 rounded-xl px-4 border border-amber-200 dark:border-amber-800">
-            <Clock className="w-8 h-8 text-amber-500 shrink-0" />
+          <div className={`flex items-center gap-3 rounded-xl px-4 border h-28 ${pendingCount > 0 ? "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800" : "bg-muted/30 border-transparent"}`}>
+            {isAutoRefreshing
+              ? <Loader2 className="w-8 h-8 text-amber-500 shrink-0 animate-spin" />
+              : <Clock className="w-8 h-8 text-muted-foreground shrink-0" />
+            }
             <div>
-              <p className="text-xs text-muted-foreground">Awaiting M-Pesa</p>
-              <p className="text-2xl font-bold text-amber-600">{pendingCount}</p>
+              <p className="text-xs text-muted-foreground">{isAutoRefreshing ? "Awaiting M-Pesa" : "Pending"}</p>
+              <p className={`text-2xl font-bold ${pendingCount > 0 ? "text-amber-600" : "text-muted-foreground"}`}>{pendingCount}</p>
+              {isAutoRefreshing && <p className="text-xs text-amber-500 mt-0.5">Auto-updating</p>}
             </div>
           </div>
           <div className="sm:col-span-2">
@@ -241,6 +256,9 @@ export default function ManageContributions() {
             </TabsTrigger>
             <TabsTrigger value="mpesa" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-2 px-5 shadow-none">
               M-Pesa Log ({txns?.filter(t => t.type === "contribution").length ?? 0})
+              {pendingCount > 0 && (
+                <span className="ml-1.5 bg-amber-400 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">{pendingCount}</span>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -279,7 +297,14 @@ export default function ManageContributions() {
           <TabsContent value="mpesa" className="mt-0">
             <Card className="shadow-sm">
               <CardHeader className="flex flex-row justify-between items-center border-b pb-4">
-                <CardTitle className="text-base">M-Pesa STK Push Log</CardTitle>
+                <div>
+                  <CardTitle className="text-base">M-Pesa STK Push Log</CardTitle>
+                  {isAutoRefreshing && (
+                    <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Live — refreshes every 10s while payments are pending
+                    </p>
+                  )}
+                </div>
                 <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => queryClient.invalidateQueries({ queryKey: getListMpesaTransactionsQueryKey(chamaId) })}>
                   <RefreshCw className="w-3 h-3" /> Refresh
                 </Button>
@@ -297,7 +322,7 @@ export default function ManageContributions() {
                       <div className="col-span-2 text-right">Amount / Status</div>
                     </div>
                     {filteredTxns.map(tx => (
-                      <div key={tx.id} className="grid grid-cols-12 gap-2 p-4 items-center hover:bg-muted/20 transition-colors text-sm">
+                      <div key={tx.id} className={`grid grid-cols-12 gap-2 p-4 items-center hover:bg-muted/20 transition-colors text-sm ${tx.status === "pending" ? "bg-amber-50/40 dark:bg-amber-950/10" : ""}`}>
                         <div className="col-span-3 font-medium">{tx.memberName ?? "—"}</div>
                         <div className="col-span-2 text-xs text-muted-foreground font-mono">{tx.phoneNumber ?? "—"}</div>
                         <div className="col-span-3">

@@ -8,6 +8,7 @@ import {
   useListLoans, getListLoansQueryKey,
   useListMpesaTransactions, getListMpesaTransactionsQueryKey,
   useDisburseB2cPayout,
+  useUpdateChama, getListChamasQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,7 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Users, Wallet, FileText, ArrowUpRight, ArrowDownRight,
   Activity, PlusCircle, Settings, ChevronLeft, SendHorizonal,
-  CheckCircle2, Clock, XCircle, Phone, RefreshCw
+  CheckCircle2, Clock, XCircle, Phone, RefreshCw, AlertTriangle,
+  CheckCheck, Circle
 } from "lucide-react";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -38,11 +40,20 @@ const disburseSchema = z.object({
   roundNumber: z.coerce.number().min(1, "Round number is required"),
 });
 
+const editChamaSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  description: z.string().optional(),
+  meetingFrequency: z.enum(["weekly", "monthly", "quarterly"]),
+  contributionAmount: z.coerce.number().min(1, "Amount must be greater than 0"),
+  bankAccount: z.string().optional(),
+});
+
 export default function ChamaDetail() {
   const params = useParams();
   const id = parseInt(params.id || "0", 10);
   const queryClient = useQueryClient();
   const [isDisburseOpen, setIsDisburseOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
 
   const { data: chama, isLoading: isChamaLoading } = useGetChama(id, {
     query: { enabled: !!id, queryKey: getGetChamaQueryKey(id) }
@@ -64,17 +75,54 @@ export default function ChamaDetail() {
   });
 
   const disburse = useDisburseB2cPayout();
+  const updateChama = useUpdateChama();
 
-  const form = useForm<z.infer<typeof disburseSchema>>({
+  const disburseForm = useForm<z.infer<typeof disburseSchema>>({
     resolver: zodResolver(disburseSchema),
     defaultValues: { amount: 0, roundNumber: 1, phoneNumber: "" },
   });
 
+  const editForm = useForm<z.infer<typeof editChamaSchema>>({
+    resolver: zodResolver(editChamaSchema),
+    defaultValues: {
+      name: chama?.name || "",
+      description: chama?.description || "",
+      meetingFrequency: (chama?.meetingFrequency as "weekly" | "monthly" | "quarterly") || "monthly",
+      contributionAmount: chama ? Number(chama.contributionAmount) : 1000,
+      bankAccount: chama?.bankAccount || "",
+    },
+  });
+
+  const openEditDialog = () => {
+    if (chama) {
+      editForm.reset({
+        name: chama.name,
+        description: chama.description || "",
+        meetingFrequency: chama.meetingFrequency as "weekly" | "monthly" | "quarterly",
+        contributionAmount: Number(chama.contributionAmount),
+        bankAccount: chama.bankAccount || "",
+      });
+    }
+    setIsEditOpen(true);
+  };
+
+  const onEdit = (values: z.infer<typeof editChamaSchema>) => {
+    updateChama.mutate({ id, data: values }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetChamaQueryKey(id) });
+        queryClient.invalidateQueries({ queryKey: getListChamasQueryKey() });
+        toast.success("Chama updated successfully");
+        setIsEditOpen(false);
+      },
+      onError: () => toast.error("Failed to update chama"),
+    });
+  };
+
   const handleMemberChange = (val: string) => {
     const memId = parseInt(val, 10);
-    form.setValue("memberId", memId);
+    disburseForm.setValue("memberId", memId);
     const member = members?.find(m => m.id === memId);
-    if (member?.phoneNumber) form.setValue("phoneNumber", member.phoneNumber);
+    if (member?.phoneNumber) disburseForm.setValue("phoneNumber", member.phoneNumber);
   };
 
   const onDisburse = (values: z.infer<typeof disburseSchema>) => {
@@ -91,11 +139,28 @@ export default function ChamaDetail() {
         toast.success("Payout queued! Safaricom will process the transfer shortly.");
         queryClient.invalidateQueries({ queryKey: getListMpesaTransactionsQueryKey(id) });
         setIsDisburseOpen(false);
-        form.reset();
+        disburseForm.reset();
       },
       onError: () => toast.error("Failed to initiate B2C payout"),
     });
   };
+
+  // Round tracker: check who paid this month
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+  const paidThisMonth = new Set(
+    contributions
+      ?.filter(c => c.status === "completed" && new Date(c.createdAt) >= monthStart)
+      .map(c => c.memberName) ?? []
+  );
+  const totalMembers = members?.length || 0;
+  const paidCount = members?.filter(m => paidThisMonth.has(m.name)).length || 0;
+  const completionPct = totalMembers > 0 ? Math.round((paidCount / totalMembers) * 100) : 0;
+
+  // Overdue loans
+  const today = new Date();
+  const overdueLoans = loans?.filter(l => l.status === "active" && new Date(l.dueDate) < today) || [];
 
   if (isChamaLoading || !chama) {
     return (
@@ -116,7 +181,7 @@ export default function ChamaDetail() {
       <PageHero
         imageUrl="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=1400&q=80&fit=crop"
         title={chama.name}
-        subtitle={chama.description || `${chama.meetingFrequency} contributions · KES ${chama.contributionAmount.toLocaleString()}`}
+        subtitle={chama.description || `${chama.meetingFrequency} contributions · KES ${Number(chama.contributionAmount).toLocaleString()}`}
         height="h-48"
         overlay="bg-gradient-to-r from-green-950/85 via-green-900/60 to-transparent"
       />
@@ -131,7 +196,12 @@ export default function ChamaDetail() {
               variant="default"
               size="sm"
               className="gap-2 bg-green-600 hover:bg-green-700"
-              onClick={() => { setIsDisburseOpen(true); if (chama?.contributionAmount && members?.length) form.setValue("amount", chama.contributionAmount * members.length); }}
+              onClick={() => {
+                setIsDisburseOpen(true);
+                if (chama?.contributionAmount && members?.length) {
+                  disburseForm.setValue("amount", Number(chama.contributionAmount) * members.length);
+                }
+              }}
             >
               <SendHorizonal className="w-4 h-4" /> Disburse Payout
             </Button>
@@ -140,7 +210,7 @@ export default function ChamaDetail() {
                 <Users className="w-4 h-4" /> Manage Members
               </Button>
             </Link>
-            <Button variant="outline" size="sm" className="gap-2">
+            <Button variant="outline" size="sm" className="gap-2" onClick={openEditDialog}>
               <Settings className="w-4 h-4" /> Settings
             </Button>
           </div>
@@ -204,7 +274,12 @@ export default function ChamaDetail() {
             <TabsTrigger value="overview" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6 shadow-none">Overview</TabsTrigger>
             <TabsTrigger value="members" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6 shadow-none">Members ({members?.length || 0})</TabsTrigger>
             <TabsTrigger value="contributions" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6 shadow-none">Contributions</TabsTrigger>
-            <TabsTrigger value="loans" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6 shadow-none">Loans</TabsTrigger>
+            <TabsTrigger value="loans" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6 shadow-none">
+              Loans
+              {overdueLoans.length > 0 && (
+                <span className="ml-1.5 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">{overdueLoans.length}</span>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="transactions" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none py-3 px-6 shadow-none">
               M-Pesa {txns && txns.length > 0 ? `(${txns.length})` : ""}
             </TabsTrigger>
@@ -212,67 +287,135 @@ export default function ChamaDetail() {
 
           <TabsContent value="overview" className="mt-0 outline-none">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Round tracker */}
               <Card className="shadow-sm">
-                <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle className="text-lg">Recent Contributions</CardTitle>
-                  <Link href={`/chamas/${id}/contributions`} className="text-sm text-primary hover:underline">View all</Link>
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <CardTitle className="text-lg">This Month's Round</CardTitle>
+                  <span className="text-sm font-semibold text-primary">{paidCount} / {totalMembers} paid</span>
                 </CardHeader>
                 <CardContent>
-                  {isSummaryLoading ? (
-                    <div className="space-y-4"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
-                  ) : summary?.recentContributions && summary.recentContributions.length > 0 ? (
-                    <div className="space-y-4">
-                      {summary.recentContributions.map(c => (
-                        <div key={c.id} className="flex justify-between items-center py-2 border-b last:border-0">
-                          <div>
-                            <p className="font-medium">{c.memberName}</p>
-                            <p className="text-xs text-muted-foreground">{new Date(c.createdAt).toLocaleDateString()}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-semibold text-primary">KES {c.amount.toLocaleString()}</p>
-                            <StatusBadge status={c.status} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  {isMembersLoading || isContLoading ? (
+                    <div className="space-y-3"><Skeleton className="h-4 w-full" /><Skeleton className="h-8 w-full" /></div>
+                  ) : totalMembers === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">Add members to start tracking rounds.</p>
                   ) : (
-                    <div className="py-6 text-center text-muted-foreground text-sm">No recent contributions</div>
+                    <div className="space-y-4">
+                      {/* Progress bar */}
+                      <div>
+                        <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
+                          <span>{completionPct}% complete</span>
+                          <span>{totalMembers - paidCount} still pending</span>
+                        </div>
+                        <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-green-500 rounded-full transition-all duration-500"
+                            style={{ width: `${completionPct}%` }}
+                          />
+                        </div>
+                      </div>
+                      {/* Member status list */}
+                      <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {members?.map(member => {
+                          const paid = paidThisMonth.has(member.name);
+                          return (
+                            <div key={member.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/40 transition-colors">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold">
+                                  {member.name.substring(0, 2).toUpperCase()}
+                                </div>
+                                <span className="text-sm font-medium">{member.name}</span>
+                              </div>
+                              {paid ? (
+                                <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                                  <CheckCheck className="w-3.5 h-3.5" /> Paid
+                                </span>
+                              ) : (
+                                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Circle className="w-3.5 h-3.5" /> Pending
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <Link href={`/chamas/${id}/contributions`}>
+                        <Button size="sm" variant="outline" className="w-full gap-2 mt-1">
+                          <PlusCircle className="w-4 h-4" /> Record Contribution
+                        </Button>
+                      </Link>
+                    </div>
                   )}
                 </CardContent>
               </Card>
 
-              <Card className="shadow-sm overflow-hidden">
-                <div className="relative h-24">
-                  <img
-                    src="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=600&q=80&fit=crop"
-                    alt="Chama info"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-green-900/70 flex items-center px-6">
-                    <p className="text-white font-semibold text-lg">Chama Information</p>
+              <div className="space-y-6">
+                {/* Recent Contributions */}
+                <Card className="shadow-sm">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle className="text-base">Recent Contributions</CardTitle>
+                    <Link href={`/chamas/${id}/contributions`} className="text-sm text-primary hover:underline">View all</Link>
+                  </CardHeader>
+                  <CardContent>
+                    {isSummaryLoading ? (
+                      <div className="space-y-4"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+                    ) : summary?.recentContributions && summary.recentContributions.length > 0 ? (
+                      <div className="space-y-3">
+                        {summary.recentContributions.slice(0, 4).map(c => (
+                          <div key={c.id} className="flex justify-between items-center py-1.5 border-b last:border-0">
+                            <div>
+                              <p className="font-medium text-sm">{c.memberName}</p>
+                              <p className="text-xs text-muted-foreground">{new Date(c.createdAt).toLocaleDateString()}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-semibold text-primary text-sm">KES {c.amount.toLocaleString()}</p>
+                              <StatusBadge status={c.status} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-4 text-center text-muted-foreground text-sm">No recent contributions</div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Chama Info */}
+                <Card className="shadow-sm overflow-hidden">
+                  <div className="relative h-16">
+                    <img
+                      src="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=600&q=80&fit=crop"
+                      alt="Chama info"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-green-900/70 flex items-center px-5">
+                      <p className="text-white font-semibold">Chama Information</p>
+                    </div>
                   </div>
-                </div>
-                <CardContent className="p-6">
-                  <dl className="space-y-4 text-sm">
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">Meeting Frequency</dt>
-                      <dd className="font-medium capitalize">{chama.meetingFrequency}</dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">Contribution Target</dt>
-                      <dd className="font-medium">KES {chama.contributionAmount.toLocaleString()}</dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">Bank / Paybill</dt>
-                      <dd className="font-medium">{chama.bankAccount || "Not set"}</dd>
-                    </div>
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">Created</dt>
-                      <dd className="font-medium">{new Date(chama.createdAt).toLocaleDateString()}</dd>
-                    </div>
-                  </dl>
-                </CardContent>
-              </Card>
+                  <CardContent className="p-5">
+                    <dl className="space-y-3 text-sm">
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">Meeting Frequency</dt>
+                        <dd className="font-medium capitalize">{chama.meetingFrequency}</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">Contribution Target</dt>
+                        <dd className="font-medium">KES {Number(chama.contributionAmount).toLocaleString()}</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">Bank / Paybill</dt>
+                        <dd className="font-medium">{chama.bankAccount || "Not set"}</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-muted-foreground">Created</dt>
+                        <dd className="font-medium">{new Date(chama.createdAt).toLocaleDateString()}</dd>
+                      </div>
+                    </dl>
+                    <Button size="sm" variant="outline" className="w-full mt-4 gap-2" onClick={openEditDialog}>
+                      <Settings className="w-4 h-4" /> Edit Settings
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </TabsContent>
 
@@ -289,20 +432,32 @@ export default function ChamaDetail() {
                   <div className="p-4 space-y-4"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
                 ) : members && members.length > 0 ? (
                   <div className="divide-y">
-                    {members.map(member => (
-                      <div key={member.id} className="p-4 flex justify-between items-center hover:bg-muted/50 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-sm">
-                            {member.name.substring(0, 2).toUpperCase()}
+                    {members.map(member => {
+                      const paid = paidThisMonth.has(member.name);
+                      return (
+                        <div key={member.id} className="p-4 flex justify-between items-center hover:bg-muted/50 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-sm">
+                              {member.name.substring(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-medium">{member.name}</p>
+                              <p className="text-xs text-muted-foreground">{member.phoneNumber}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium">{member.name}</p>
-                            <p className="text-xs text-muted-foreground">{member.phoneNumber}</p>
+                          <div className="flex items-center gap-3">
+                            {paid ? (
+                              <span className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full font-medium">
+                                <CheckCheck className="w-3 h-3" /> Paid this month
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded-full">Unpaid</span>
+                            )}
+                            <BadgeRole role={member.role} />
                           </div>
                         </div>
-                        <BadgeRole role={member.role} />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <EmptyState icon={Users} title="No Members" description="Add members to start saving together." action={<Link href={`/chamas/${id}/members`}><Button>Manage Members</Button></Link>} />
@@ -345,6 +500,17 @@ export default function ChamaDetail() {
           </TabsContent>
 
           <TabsContent value="loans" className="mt-0 outline-none">
+            {overdueLoans.length > 0 && (
+              <div className="flex items-start gap-3 p-4 mb-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300">
+                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-sm">{overdueLoans.length} overdue loan{overdueLoans.length > 1 ? "s" : ""}</p>
+                  <p className="text-xs mt-0.5 opacity-80">
+                    {overdueLoans.map(l => l.memberName).join(", ")} — contact them to arrange repayment.
+                  </p>
+                </div>
+              </div>
+            )}
             <Card className="shadow-sm">
               <CardHeader className="flex flex-row justify-between items-center border-b pb-4">
                 <CardTitle className="text-lg">Loans</CardTitle>
@@ -357,20 +523,26 @@ export default function ChamaDetail() {
                   <div className="p-4"><Skeleton className="h-32 w-full" /></div>
                 ) : loans && loans.length > 0 ? (
                   <div className="divide-y">
-                    {loans.map(loan => (
-                      <Link key={loan.id} href={`/chamas/${id}/loans/${loan.id}`}>
-                        <div className="p-4 flex justify-between items-center hover:bg-muted/50 transition-colors cursor-pointer">
-                          <div>
-                            <p className="font-medium">{loan.memberName}</p>
-                            <p className="text-xs text-muted-foreground">Due: {new Date(loan.dueDate).toLocaleDateString()}</p>
+                    {loans.map(loan => {
+                      const overdue = loan.status === "active" && new Date(loan.dueDate) < today;
+                      return (
+                        <Link key={loan.id} href={`/chamas/${id}/loans/${loan.id}`}>
+                          <div className={`p-4 flex justify-between items-center hover:bg-muted/50 transition-colors cursor-pointer ${overdue ? "bg-red-50/50 dark:bg-red-950/10" : ""}`}>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium">{loan.memberName}</p>
+                                {overdue && <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded font-medium">OVERDUE</span>}
+                              </div>
+                              <p className="text-xs text-muted-foreground">Due: {new Date(loan.dueDate).toLocaleDateString()}</p>
+                            </div>
+                            <div className="text-right flex flex-col items-end gap-1">
+                              <p className={`font-bold ${overdue ? "text-red-600" : "text-amber-600"}`}>KES {loan.principal.toLocaleString()}</p>
+                              <StatusBadge status={loan.status} />
+                            </div>
                           </div>
-                          <div className="text-right flex flex-col items-end gap-1">
-                            <p className="font-bold text-amber-600">KES {loan.principal.toLocaleString()}</p>
-                            <StatusBadge status={loan.status} />
-                          </div>
-                        </div>
-                      </Link>
-                    ))}
+                        </Link>
+                      );
+                    })}
                   </div>
                 ) : (
                   <EmptyState icon={FileText} title="No Loans" description="No loans have been issued yet." action={<Link href={`/chamas/${id}/loans`}><Button>Issue Loan</Button></Link>} />
@@ -432,6 +604,7 @@ export default function ChamaDetail() {
         </Tabs>
       </div>
 
+      {/* Disburse Dialog */}
       <Dialog open={isDisburseOpen} onOpenChange={setIsDisburseOpen}>
         <DialogContent>
           <DialogHeader>
@@ -443,9 +616,9 @@ export default function ChamaDetail() {
           <p className="text-sm text-muted-foreground -mt-2">
             Send the chama pool directly to a member's M-Pesa. Safaricom will process the transfer within minutes.
           </p>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onDisburse)} className="space-y-4">
-              <FormField control={form.control} name="memberId" render={() => (
+          <Form {...disburseForm}>
+            <form onSubmit={disburseForm.handleSubmit(onDisburse)} className="space-y-4">
+              <FormField control={disburseForm.control} name="memberId" render={() => (
                 <FormItem>
                   <FormLabel>Recipient Member</FormLabel>
                   <Select onValueChange={handleMemberChange}>
@@ -457,7 +630,7 @@ export default function ChamaDetail() {
                   <FormMessage />
                 </FormItem>
               )} />
-              <FormField control={form.control} name="phoneNumber" render={({ field }) => (
+              <FormField control={disburseForm.control} name="phoneNumber" render={({ field }) => (
                 <FormItem>
                   <FormLabel>M-Pesa Phone Number</FormLabel>
                   <FormControl>
@@ -470,14 +643,14 @@ export default function ChamaDetail() {
                 </FormItem>
               )} />
               <div className="grid grid-cols-2 gap-4">
-                <FormField control={form.control} name="amount" render={({ field }) => (
+                <FormField control={disburseForm.control} name="amount" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Amount (KES)</FormLabel>
                     <FormControl><Input type="number" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={form.control} name="roundNumber" render={({ field }) => (
+                <FormField control={disburseForm.control} name="roundNumber" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Round Number</FormLabel>
                     <FormControl><Input type="number" min={1} {...field} /></FormControl>
@@ -492,6 +665,72 @@ export default function ChamaDetail() {
                 <Button type="button" variant="outline" onClick={() => setIsDisburseOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={disburse.isPending} className="bg-green-600 hover:bg-green-700">
                   {disburse.isPending ? "Sending..." : "Send Payout"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Chama Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings className="w-5 h-5 text-green-600" />
+              Edit Chama Settings
+            </DialogTitle>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(onEdit)} className="space-y-4">
+              <FormField control={editForm.control} name="name" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Chama Name</FormLabel>
+                  <FormControl><Input placeholder="e.g. Visionaries Sacco" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={editForm.control} name="description" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description (Optional)</FormLabel>
+                  <FormControl><Input placeholder="What is the goal of this chama?" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={editForm.control} name="meetingFrequency" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Meeting Frequency</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                        <SelectItem value="quarterly">Quarterly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={editForm.control} name="contributionAmount" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Contribution (KES)</FormLabel>
+                    <FormControl><Input type="number" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+              <FormField control={editForm.control} name="bankAccount" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Bank Account / Paybill (Optional)</FormLabel>
+                  <FormControl><Input placeholder="e.g. Paybill 123456" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={updateChama.isPending}>
+                  {updateChama.isPending ? "Saving..." : "Save Changes"}
                 </Button>
               </DialogFooter>
             </form>

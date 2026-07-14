@@ -6,7 +6,7 @@ import {
   useGetChama, getGetChamaQueryKey
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Plus, FileText, Search, TrendingUp } from "lucide-react";
+import { ChevronLeft, Plus, FileText, Search, TrendingUp, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -60,8 +60,22 @@ export default function ManageLoans() {
     });
   };
 
-  const filteredLoans = loans?.filter(l => l.memberName.toLowerCase().includes(search.toLowerCase()));
+  const today = new Date();
+
+  const isOverdue = (loan: { status: string; dueDate: string }) =>
+    loan.status === "active" && new Date(loan.dueDate) < today;
+
+  const sortedLoans = loans ? [...loans].sort((a, b) => {
+    if (isOverdue(a) && !isOverdue(b)) return -1;
+    if (!isOverdue(a) && isOverdue(b)) return 1;
+    if (a.status === "active" && b.status !== "active") return -1;
+    if (a.status !== "active" && b.status === "active") return 1;
+    return 0;
+  }) : [];
+
+  const filteredLoans = sortedLoans.filter(l => l.memberName.toLowerCase().includes(search.toLowerCase()));
   const activeLoans = loans?.filter(l => l.status === "active").length || 0;
+  const overdueLoans = loans?.filter(isOverdue).length || 0;
   const totalLoaned = loans?.reduce((s, l) => s + l.principal, 0) || 0;
 
   return (
@@ -138,8 +152,21 @@ export default function ManageLoans() {
           </Dialog>
         </div>
 
-        {/* Stats strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {overdueLoans > 0 && (
+          <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300">
+            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-sm">
+                {overdueLoans} overdue loan{overdueLoans > 1 ? "s" : ""}
+              </p>
+              <p className="text-xs mt-0.5 opacity-80">
+                These loans have passed their due date. Contact the members to arrange repayment.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div className="rounded-xl overflow-hidden relative h-28">
             <img src="https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=400&q=80&fit=crop" alt="Finance" className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-amber-900/70 flex flex-col items-center justify-center text-white">
@@ -147,16 +174,21 @@ export default function ManageLoans() {
               <p className="text-2xl font-bold">KES {totalLoaned.toLocaleString()}</p>
             </div>
           </div>
-          <div className="rounded-xl bg-amber-50 border border-amber-100 flex flex-col items-center justify-center h-28">
+          <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 flex flex-col items-center justify-center h-28">
             <TrendingUp className="w-6 h-6 text-amber-500 mb-1" />
-            <p className="text-xs text-amber-700">Active Loans</p>
-            <p className="text-3xl font-bold text-amber-700">{activeLoans}</p>
+            <p className="text-xs text-amber-700 dark:text-amber-300">Active Loans</p>
+            <p className="text-3xl font-bold text-amber-700 dark:text-amber-300">{activeLoans}</p>
+          </div>
+          <div className={`rounded-xl flex flex-col items-center justify-center h-28 border ${overdueLoans > 0 ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800" : "bg-muted/30 border-transparent"}`}>
+            <AlertTriangle className={`w-6 h-6 mb-1 ${overdueLoans > 0 ? "text-red-500" : "text-muted-foreground"}`} />
+            <p className={`text-xs ${overdueLoans > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>Overdue</p>
+            <p className={`text-3xl font-bold ${overdueLoans > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>{overdueLoans}</p>
           </div>
           <div className="flex flex-col justify-center">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search loans by member..."
+                placeholder="Search by member..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
@@ -168,50 +200,60 @@ export default function ManageLoans() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {isLoading ? (
             [1, 2, 3].map(i => <div key={i} className="h-48 bg-muted animate-pulse rounded-xl" />)
-          ) : filteredLoans && filteredLoans.length > 0 ? (
-            filteredLoans.map(loan => (
-              <Link key={loan.id} href={`/chamas/${chamaId}/loans/${loan.id}`}>
-                <Card className="hover-elevate cursor-pointer transition-all h-full overflow-hidden group">
-                  <div className="relative h-24 overflow-hidden">
-                    <img
-                      src="https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=400&q=80&fit=crop"
-                      alt="Loan"
-                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-r from-amber-950/80 to-amber-800/40" />
-                    <div className="absolute inset-0 flex items-center justify-between px-4">
-                      <div>
-                        <p className="text-white font-bold text-lg">{loan.memberName}</p>
-                        <p className="text-white/70 text-xs">Due: {new Date(loan.dueDate).toLocaleDateString()}</p>
+          ) : filteredLoans.length > 0 ? (
+            filteredLoans.map(loan => {
+              const overdue = isOverdue(loan);
+              return (
+                <Link key={loan.id} href={`/chamas/${chamaId}/loans/${loan.id}`}>
+                  <Card className={`hover-elevate cursor-pointer transition-all h-full overflow-hidden group relative ${overdue ? "ring-2 ring-red-400 ring-offset-1" : ""}`}>
+                    {overdue && (
+                      <div className="absolute top-2 left-2 z-10 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> OVERDUE
                       </div>
-                      <StatusBadge status={loan.status} />
-                    </div>
-                  </div>
-                  <CardContent className="p-4">
-                    <div className="space-y-2 mt-1">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Principal:</span>
-                        <span className="font-medium">KES {loan.principal.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Interest ({loan.interestRate}%):</span>
-                        <span className="font-medium">KES {((loan.principal * loan.interestRate) / 100).toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between text-sm font-semibold pt-1 border-t">
-                        <span>Total Due:</span>
-                        <span className="text-amber-600">KES {loan.totalDue?.toLocaleString()}</span>
-                      </div>
-                      {loan.totalRepaid !== undefined && loan.totalRepaid > 0 && (
-                        <div className="flex justify-between text-sm font-semibold text-green-600">
-                          <span>Repaid:</span>
-                          <span>- KES {loan.totalRepaid.toLocaleString()}</span>
+                    )}
+                    <div className="relative h-24 overflow-hidden">
+                      <img
+                        src="https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=400&q=80&fit=crop"
+                        alt="Loan"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                      <div className={`absolute inset-0 ${overdue ? "bg-gradient-to-r from-red-950/80 to-red-800/40" : "bg-gradient-to-r from-amber-950/80 to-amber-800/40"}`} />
+                      <div className="absolute inset-0 flex items-center justify-between px-4">
+                        <div className={overdue ? "mt-4" : ""}>
+                          <p className="text-white font-bold text-lg">{loan.memberName}</p>
+                          <p className={`text-xs ${overdue ? "text-red-200 font-semibold" : "text-white/70"}`}>
+                            Due: {new Date(loan.dueDate).toLocaleDateString()}
+                          </p>
                         </div>
-                      )}
+                        <StatusBadge status={loan.status} />
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))
+                    <CardContent className="p-4">
+                      <div className="space-y-2 mt-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Principal:</span>
+                          <span className="font-medium">KES {loan.principal.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Interest ({loan.interestRate}%):</span>
+                          <span className="font-medium">KES {((loan.principal * loan.interestRate) / 100).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between text-sm font-semibold pt-1 border-t">
+                          <span>Total Due:</span>
+                          <span className={overdue ? "text-red-600" : "text-amber-600"}>KES {loan.totalDue?.toLocaleString()}</span>
+                        </div>
+                        {loan.totalRepaid !== undefined && loan.totalRepaid > 0 && (
+                          <div className="flex justify-between text-sm font-semibold text-green-600">
+                            <span>Repaid:</span>
+                            <span>- KES {loan.totalRepaid.toLocaleString()}</span>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })
           ) : (
             <div className="col-span-full">
               <EmptyState icon={FileText} title="No Loans Found" description="There are no loans matching your criteria." />
