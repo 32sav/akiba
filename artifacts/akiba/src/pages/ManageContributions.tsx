@@ -48,7 +48,7 @@ export default function ManageContributions() {
       queryKey: getListMpesaTransactionsQueryKey(chamaId),
       // Auto-refresh every 10s when there are pending STK push transactions
       refetchInterval: (data) => {
-        const pending = (data as { status: string }[] | undefined)?.filter(t => t.status === "pending").length ?? 0;
+        const pending = (data as unknown as { status: string }[] | undefined)?.filter(t => t.status === "pending").length ?? 0;
         return pending > 0 ? 10000 : false;
       },
     }

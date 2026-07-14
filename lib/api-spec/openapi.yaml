@@ -466,6 +466,162 @@ paths:
               schema:
                 $ref: "#/components/schemas/Repayment"
 
+  /chamas/{chamaId}/loans/{loanId}/repayment-plan:
+    get:
+      operationId: listRepaymentPlan
+      tags: [loans]
+      summary: List repayment plan entries for a loan
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of plan entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RepaymentPlanEntry"
+    post:
+      operationId: addRepaymentPlanEntry
+      tags: [loans]
+      summary: Add a planned installment to a loan repayment plan
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepaymentPlanEntryInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepaymentPlanEntry"
+
+  /chamas/{chamaId}/loans/{loanId}/repayment-plan/{planId}:
+    patch:
+      operationId: updateRepaymentPlanEntry
+      tags: [loans]
+      summary: Update a repayment plan entry status
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: loanId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: planId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepaymentPlanEntryUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepaymentPlanEntry"
+
+  /chamas/{chamaId}/invitations:
+    post:
+      operationId: createInvitation
+      tags: [members]
+      summary: Generate an invite link for a chama
+      parameters:
+        - name: chamaId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Invitation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invitation"
+
+  /invitations/{token}:
+    get:
+      operationId: getInvitation
+      tags: [members]
+      summary: Get public info for an invite link
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Invitation details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvitationPublic"
+        "404":
+          description: Not found or expired
+
+  /invitations/{token}/accept:
+    post:
+      operationId: acceptInvitation
+      tags: [members]
+      summary: Accept an invite and join the chama as a member
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvitationAcceptInput"
+      responses:
+        "201":
+          description: Joined successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "400":
+          description: Invalid or expired token
+
   /chamas/{chamaId}/transactions:
     get:
       operationId: listMpesaTransactions
@@ -873,6 +1029,112 @@ components:
           minimum: 1
         mpesaRef:
           type: string
+
+    RepaymentPlanEntry:
+      type: object
+      required: [id, loanId, chamaId, plannedDate, plannedAmount, status, createdAt]
+      properties:
+        id:
+          type: integer
+        loanId:
+          type: integer
+        chamaId:
+          type: integer
+        plannedDate:
+          type: string
+          format: date
+        plannedAmount:
+          type: number
+        notes:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [planned, paid, skipped]
+        createdAt:
+          type: string
+          format: date-time
+
+    RepaymentPlanEntryInput:
+      type: object
+      required: [plannedDate, plannedAmount]
+      properties:
+        plannedDate:
+          type: string
+          format: date
+        plannedAmount:
+          type: number
+          minimum: 1
+        notes:
+          type: string
+
+    RepaymentPlanEntryUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [planned, paid, skipped]
+        notes:
+          type: string
+
+    Invitation:
+      type: object
+      required: [id, chamaId, token, maxUses, useCount, expiresAt, createdAt]
+      properties:
+        id:
+          type: integer
+        chamaId:
+          type: integer
+        token:
+          type: string
+        maxUses:
+          type: integer
+        useCount:
+          type: integer
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    InvitationPublic:
+      type: object
+      required: [chamaId, chamaName, contributionAmount, meetingFrequency, memberCount, expiresAt, isExpired]
+      properties:
+        chamaId:
+          type: integer
+        chamaName:
+          type: string
+        chamaDescription:
+          type: ["string", "null"]
+        contributionAmount:
+          type: number
+        meetingFrequency:
+          type: string
+          enum: [weekly, monthly, quarterly]
+        memberCount:
+          type: integer
+        expiresAt:
+          type: string
+          format: date-time
+        isExpired:
+          type: boolean
+
+    InvitationAcceptInput:
+      type: object
+      required: [name, phoneNumber]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        phoneNumber:
+          type: string
+          minLength: 1
+        email:
+          type: string
+        role:
+          type: string
+          enum: [chairperson, treasurer, secretary, member]
 
     MpesaPaymentInput:
       type: object

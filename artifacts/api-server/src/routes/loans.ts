@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, eq } from "drizzle-orm";
-import { db, loansTable, membersTable, repaymentsTable } from "@workspace/db";
+import { db, loansTable, membersTable, repaymentsTable, repaymentPlansTable } from "@workspace/db";
 import {
   ListLoansParams,
   CreateLoanParams,
@@ -11,6 +11,11 @@ import {
   ListRepaymentsParams,
   RecordRepaymentParams,
   RecordRepaymentBody,
+  ListRepaymentPlanParams,
+  AddRepaymentPlanEntryParams,
+  AddRepaymentPlanEntryBody,
+  UpdateRepaymentPlanEntryParams,
+  UpdateRepaymentPlanEntryBody,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -197,6 +202,71 @@ router.post("/chamas/:chamaId/loans/:loanId/repayments", async (req, res): Promi
     amount: parseFloat(repayment.amount),
     paidAt: repayment.paidAt.toISOString(),
     createdAt: repayment.createdAt.toISOString(),
+  });
+});
+
+router.get("/chamas/:chamaId/loans/:loanId/repayment-plan", async (req, res): Promise<void> => {
+  const params = ListRepaymentPlanParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const rows = await db
+    .select()
+    .from(repaymentPlansTable)
+    .where(and(eq(repaymentPlansTable.chamaId, params.data.chamaId), eq(repaymentPlansTable.loanId, params.data.loanId)))
+    .orderBy(repaymentPlansTable.plannedDate);
+  res.json(rows.map(r => ({
+    ...r,
+    plannedAmount: parseFloat(r.plannedAmount),
+    createdAt: r.createdAt.toISOString(),
+  })));
+});
+
+router.post("/chamas/:chamaId/loans/:loanId/repayment-plan", async (req, res): Promise<void> => {
+  const params = AddRepaymentPlanEntryParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const parsed = AddRepaymentPlanEntryBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const [loan] = await db.select({ id: loansTable.id }).from(loansTable)
+    .where(and(eq(loansTable.chamaId, params.data.chamaId), eq(loansTable.id, params.data.loanId)));
+  if (!loan) { res.status(404).json({ error: "Loan not found" }); return; }
+
+  const plannedDateStr = parsed.data.plannedDate instanceof Date
+    ? parsed.data.plannedDate.toISOString().split("T")[0]
+    : String(parsed.data.plannedDate);
+
+  const [entry] = await db.insert(repaymentPlansTable).values({
+    loanId: params.data.loanId,
+    chamaId: params.data.chamaId,
+    plannedDate: plannedDateStr,
+    plannedAmount: String(parsed.data.plannedAmount),
+    notes: parsed.data.notes,
+    status: "planned",
+  }).returning();
+
+  res.status(201).json({
+    ...entry,
+    plannedAmount: parseFloat(entry.plannedAmount),
+    createdAt: entry.createdAt.toISOString(),
+  });
+});
+
+router.patch("/chamas/:chamaId/loans/:loanId/repayment-plan/:planId", async (req, res): Promise<void> => {
+  const params = UpdateRepaymentPlanEntryParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const parsed = UpdateRepaymentPlanEntryBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const [entry] = await db.update(repaymentPlansTable)
+    .set({ ...parsed.data })
+    .where(and(eq(repaymentPlansTable.id, params.data.planId), eq(repaymentPlansTable.loanId, params.data.loanId)))
+    .returning();
+
+  if (!entry) { res.status(404).json({ error: "Plan entry not found" }); return; }
+
+  res.json({
+    ...entry,
+    plannedAmount: parseFloat(entry.plannedAmount),
+    createdAt: entry.createdAt.toISOString(),
   });
 });
 

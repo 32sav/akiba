@@ -250,6 +250,98 @@ export interface RepaymentInput {
   mpesaRef?: string;
 }
 
+export type RepaymentPlanEntryStatus = typeof RepaymentPlanEntryStatus[keyof typeof RepaymentPlanEntryStatus];
+
+
+export const RepaymentPlanEntryStatus = {
+  planned: 'planned',
+  paid: 'paid',
+  skipped: 'skipped',
+} as const;
+
+export interface RepaymentPlanEntry {
+  id: number;
+  loanId: number;
+  chamaId: number;
+  plannedDate: string;
+  plannedAmount: number;
+  /** @nullable */
+  notes?: string | null;
+  status: RepaymentPlanEntryStatus;
+  createdAt: string;
+}
+
+export interface RepaymentPlanEntryInput {
+  plannedDate: string;
+  /** @minimum 1 */
+  plannedAmount: number;
+  notes?: string;
+}
+
+export type RepaymentPlanEntryUpdateStatus = typeof RepaymentPlanEntryUpdateStatus[keyof typeof RepaymentPlanEntryUpdateStatus];
+
+
+export const RepaymentPlanEntryUpdateStatus = {
+  planned: 'planned',
+  paid: 'paid',
+  skipped: 'skipped',
+} as const;
+
+export interface RepaymentPlanEntryUpdate {
+  status?: RepaymentPlanEntryUpdateStatus;
+  notes?: string;
+}
+
+export interface Invitation {
+  id: number;
+  chamaId: number;
+  token: string;
+  maxUses: number;
+  useCount: number;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export type InvitationPublicMeetingFrequency = typeof InvitationPublicMeetingFrequency[keyof typeof InvitationPublicMeetingFrequency];
+
+
+export const InvitationPublicMeetingFrequency = {
+  weekly: 'weekly',
+  monthly: 'monthly',
+  quarterly: 'quarterly',
+} as const;
+
+export interface InvitationPublic {
+  chamaId: number;
+  chamaName: string;
+  /** @nullable */
+  chamaDescription?: string | null;
+  contributionAmount: number;
+  meetingFrequency: InvitationPublicMeetingFrequency;
+  memberCount: number;
+  expiresAt: string;
+  isExpired: boolean;
+}
+
+export type InvitationAcceptInputRole = typeof InvitationAcceptInputRole[keyof typeof InvitationAcceptInputRole];
+
+
+export const InvitationAcceptInputRole = {
+  chairperson: 'chairperson',
+  treasurer: 'treasurer',
+  secretary: 'secretary',
+  member: 'member',
+} as const;
+
+export interface InvitationAcceptInput {
+  /** @minLength 1 */
+  name: string;
+  /** @minLength 1 */
+  phoneNumber: string;
+  email?: string;
+  role?: InvitationAcceptInputRole;
+}
+
 export interface MpesaPaymentInput {
   /** @minLength 1 */
   phoneNumber: string;

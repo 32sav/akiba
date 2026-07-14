@@ -18,6 +18,7 @@ import ManageMembers from "@/pages/ManageMembers";
 import ManageContributions from "@/pages/ManageContributions";
 import ManageLoans from "@/pages/ManageLoans";
 import LoanDetail from "@/pages/LoanDetail";
+import JoinChama from "@/pages/JoinChama";
 
 const queryClient = new QueryClient();
 
@@ -221,6 +222,7 @@ function ClerkProviderWithRoutes() {
             <Route path="/" component={HomeRedirect} />
             <Route path="/sign-in/*?" component={SignInPage} />
             <Route path="/sign-up/*?" component={SignUpPage} />
+            <Route path="/join/:token" component={JoinChama} />
             <Route path="/dashboard" component={DashboardGate} />
             <Route path="/chamas" component={DashboardGate} />
             <Route path="/chamas/:rest*" component={DashboardGate} />

@@ -5,12 +5,19 @@ import {
   useUpdateLoan,
   useListRepayments, getListRepaymentsQueryKey,
   useRecordRepayment, useInitiateMpesaPayment,
-  useGetMember, getGetMemberQueryKey
+  useGetMember, getGetMemberQueryKey,
+  useListRepaymentPlan, getListRepaymentPlanQueryKey,
+  useAddRepaymentPlanEntry,
+  useUpdateRepaymentPlanEntry,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Plus, History, CheckCircle, AlertCircle, Phone } from "lucide-react";
+import {
+  ChevronLeft, Plus, History, CheckCircle, AlertCircle, Phone,
+  CalendarClock, Pencil, Check, X, TrendingDown,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -32,12 +39,25 @@ const repaymentSchema = z.object({
   phoneNumber: z.string().optional(),
 });
 
+const planEntrySchema = z.object({
+  plannedDate: z.string().min(1, "Date is required"),
+  plannedAmount: z.coerce.number().min(1, "Amount must be greater than 0"),
+  notes: z.string().optional(),
+});
+
+const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  planned: { bg: "bg-blue-100", text: "text-blue-700", label: "Planned" },
+  paid: { bg: "bg-green-100", text: "text-green-700", label: "Paid" },
+  skipped: { bg: "bg-gray-100", text: "text-gray-500", label: "Skipped" },
+};
+
 export default function LoanDetail() {
   const params = useParams();
   const chamaId = parseInt(params.id || "0", 10);
   const loanId = parseInt(params.loanId || "0", 10);
   const queryClient = useQueryClient();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isPlanOpen, setIsPlanOpen] = useState(false);
 
   const { data: loan, isLoading: isLoanLoading } = useGetLoan(chamaId, loanId, {
     query: { enabled: !!(chamaId && loanId), queryKey: getGetLoanQueryKey(chamaId, loanId) }
@@ -48,17 +68,31 @@ export default function LoanDetail() {
   const { data: member } = useGetMember(chamaId, loan?.memberId || 0, {
     query: { enabled: !!(chamaId && loan?.memberId), queryKey: getGetMemberQueryKey(chamaId, loan?.memberId || 0) }
   });
+  const { data: planEntries, isLoading: isPlanLoading } = useListRepaymentPlan(chamaId, loanId, {
+    query: { enabled: !!(chamaId && loanId), queryKey: getListRepaymentPlanQueryKey(chamaId, loanId) }
+  });
 
   const recordRepayment = useRecordRepayment();
   const initiateMpesa = useInitiateMpesaPayment();
   const updateLoan = useUpdateLoan();
+  const addPlanEntry = useAddRepaymentPlanEntry();
+  const updatePlanEntry = useUpdateRepaymentPlanEntry();
 
   const remainingBalance = (loan?.totalDue || 0) - (loan?.totalRepaid || 0);
   const progressPercent = loan?.totalDue ? Math.min(100, Math.max(0, ((loan.totalRepaid || 0) / loan.totalDue) * 100)) : 0;
 
+  const plannedTotal = planEntries?.reduce((sum, e) => sum + e.plannedAmount, 0) || 0;
+  const plannedPaid = planEntries?.filter(e => e.status === "paid").reduce((sum, e) => sum + e.plannedAmount, 0) || 0;
+  const planCoverage = remainingBalance > 0 ? Math.min(100, (plannedTotal / (loan?.totalDue || 1)) * 100) : 0;
+
   const form = useForm<z.infer<typeof repaymentSchema>>({
     resolver: zodResolver(repaymentSchema),
     defaultValues: { amount: remainingBalance > 0 ? remainingBalance : 0, paymentMethod: "manual", mpesaRef: "", phoneNumber: "" },
+  });
+
+  const planForm = useForm<z.infer<typeof planEntrySchema>>({
+    resolver: zodResolver(planEntrySchema),
+    defaultValues: { plannedDate: "", plannedAmount: 0, notes: "" },
   });
 
   const paymentMethod = form.watch("paymentMethod");
@@ -99,6 +133,28 @@ export default function LoanDetail() {
         onError: () => toast.error("Failed to record repayment")
       });
     }
+  };
+
+  const onAddPlan = (values: z.infer<typeof planEntrySchema>) => {
+    addPlanEntry.mutate({ chamaId, loanId, data: { ...values, notes: values.notes || undefined } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListRepaymentPlanQueryKey(chamaId, loanId) });
+        toast.success("Installment added to plan");
+        setIsPlanOpen(false);
+        planForm.reset();
+      },
+      onError: () => toast.error("Failed to add installment"),
+    });
+  };
+
+  const handlePlanStatus = (planId: number, status: "planned" | "paid" | "skipped") => {
+    updatePlanEntry.mutate({ chamaId, loanId, planId, data: { status } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListRepaymentPlanQueryKey(chamaId, loanId) });
+        toast.success("Installment updated");
+      },
+      onError: () => toast.error("Failed to update installment"),
+    });
   };
 
   const markAsDefaulted = () => {
@@ -214,6 +270,7 @@ export default function LoanDetail() {
           )}
         </div>
 
+        {/* Loan summary + history row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="lg:col-span-2 shadow-sm overflow-hidden">
             <div className="relative h-24">
@@ -234,7 +291,7 @@ export default function LoanDetail() {
                 </div>
                 <div className="h-10 w-px bg-white/20" />
                 <div>
-                  <p className="text-white/70 text-xs">Remaining</p>
+                  <p className="text-white/70 text-xs">Still Owes</p>
                   <p className="text-amber-300 font-bold text-2xl">KES {remainingBalance.toLocaleString()}</p>
                 </div>
               </div>
@@ -323,6 +380,167 @@ export default function LoanDetail() {
             </CardContent>
           </Card>
         </div>
+
+        {/* What I Owe + Repayment Plan */}
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-start justify-between gap-4 pb-4">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <TrendingDown className="w-5 h-5 text-amber-500" />
+                What {loan.memberName} Owes & Payment Plan
+              </CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Outstanding balance and how the member plans to settle it.
+              </p>
+            </div>
+            {loan.status === "active" && (
+              <Dialog open={isPlanOpen} onOpenChange={setIsPlanOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1 shrink-0">
+                    <Plus className="w-3.5 h-3.5" /> Add Installment
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>Add Planned Installment</DialogTitle></DialogHeader>
+                  <Form {...planForm}>
+                    <form onSubmit={planForm.handleSubmit(onAddPlan)} className="space-y-4">
+                      <div className="bg-amber-50 border border-amber-100 rounded p-3 text-sm">
+                        Remaining balance: <span className="font-bold text-amber-700">KES {remainingBalance.toLocaleString()}</span>
+                      </div>
+                      <FormField control={planForm.control} name="plannedDate" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Planned Payment Date</FormLabel>
+                          <FormControl><Input type="date" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={planForm.control} name="plannedAmount" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Amount (KES)</FormLabel>
+                          <FormControl><Input type="number" placeholder="e.g. 5000" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={planForm.control} name="notes" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Notes (Optional)</FormLabel>
+                          <FormControl><Textarea placeholder="e.g. Will pay from salary" {...field} /></FormControl>
+                        </FormItem>
+                      )} />
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setIsPlanOpen(false)}>Cancel</Button>
+                        <Button type="submit" disabled={addPlanEntry.isPending}>
+                          {addPlanEntry.isPending ? "Adding..." : "Add Installment"}
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </Form>
+                </DialogContent>
+              </Dialog>
+            )}
+          </CardHeader>
+
+          <CardContent className="space-y-5">
+            {/* Outstanding balance summary */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+                <p className="text-xs text-amber-600 font-medium uppercase tracking-wide mb-1">Still Owes</p>
+                <p className="text-2xl font-bold text-amber-700">KES {remainingBalance.toLocaleString()}</p>
+                <p className="text-xs text-amber-600 mt-1">of KES {loan.totalDue?.toLocaleString()} total</p>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                <p className="text-xs text-blue-600 font-medium uppercase tracking-wide mb-1">Planned in Schedule</p>
+                <p className="text-2xl font-bold text-blue-700">KES {plannedTotal.toLocaleString()}</p>
+                <p className="text-xs text-blue-600 mt-1">across {planEntries?.length || 0} installment{(planEntries?.length || 0) !== 1 ? "s" : ""}</p>
+              </div>
+              <div className="bg-green-50 border border-green-100 rounded-xl p-4">
+                <p className="text-xs text-green-600 font-medium uppercase tracking-wide mb-1">Paid via Plan</p>
+                <p className="text-2xl font-bold text-green-700">KES {plannedPaid.toLocaleString()}</p>
+                <p className="text-xs text-green-600 mt-1">{planEntries?.filter(e => e.status === "paid").length || 0} installment{(planEntries?.filter(e => e.status === "paid").length || 0) !== 1 ? "s" : ""} marked paid</p>
+              </div>
+            </div>
+
+            {/* Plan coverage bar */}
+            {(planEntries?.length || 0) > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Plan coverage</span>
+                  <span>{planCoverage.toFixed(0)}% of total loan covered</span>
+                </div>
+                <Progress value={planCoverage} className="h-2" />
+              </div>
+            )}
+
+            {/* Plan entries */}
+            {isPlanLoading ? (
+              <div className="text-center text-muted-foreground animate-pulse py-4">Loading plan...</div>
+            ) : planEntries && planEntries.length > 0 ? (
+              <div className="divide-y border rounded-xl overflow-hidden">
+                {planEntries.map((entry) => {
+                  const st = STATUS_STYLES[entry.status] || STATUS_STYLES.planned;
+                  const isPast = new Date(entry.plannedDate) < new Date() && entry.status === "planned";
+                  return (
+                    <div key={entry.id} className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${isPast ? "bg-red-50/60" : "hover:bg-muted/20"}`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${st.bg} ${st.text}`}>
+                          <CalendarClock className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold">KES {entry.plannedAmount.toLocaleString()}</p>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.bg} ${st.text}`}>
+                              {st.label}
+                            </span>
+                            {isPast && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">Overdue</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {new Date(entry.plannedDate).toLocaleDateString("en-KE", { day: "numeric", month: "long", year: "numeric" })}
+                            {entry.notes && ` · ${entry.notes}`}
+                          </p>
+                        </div>
+                      </div>
+                      {loan.status === "active" && entry.status !== "paid" && (
+                        <div className="flex gap-1.5 self-end sm:self-auto">
+                          <Button
+                            size="sm" variant="outline"
+                            className="h-7 text-green-600 border-green-200 hover:bg-green-50 text-xs gap-1"
+                            onClick={() => handlePlanStatus(entry.id, "paid")}
+                            disabled={updatePlanEntry.isPending}
+                          >
+                            <Check className="w-3 h-3" /> Mark Paid
+                          </Button>
+                          {entry.status === "planned" && (
+                            <Button
+                              size="sm" variant="outline"
+                              className="h-7 text-gray-500 border-gray-200 hover:bg-gray-50 text-xs gap-1"
+                              onClick={() => handlePlanStatus(entry.id, "skipped")}
+                              disabled={updatePlanEntry.isPending}
+                            >
+                              <X className="w-3 h-3" /> Skip
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="border rounded-xl">
+                <EmptyState
+                  icon={Pencil}
+                  title="No Payment Plan Yet"
+                  description={loan.status === "active"
+                    ? `Add planned installments to show how ${loan.memberName} intends to repay KES ${remainingBalance.toLocaleString()}.`
+                    : "No repayment plan was set for this loan."
+                  }
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

@@ -30,6 +30,9 @@ import type {
   ContributionInput,
   DarajaWebhookPayload,
   HealthStatus,
+  Invitation,
+  InvitationAcceptInput,
+  InvitationPublic,
   Loan,
   LoanInput,
   LoanUpdate,
@@ -42,7 +45,10 @@ import type {
   MpesaTransaction,
   ReconcilePendingTransactions200,
   Repayment,
-  RepaymentInput
+  RepaymentInput,
+  RepaymentPlanEntry,
+  RepaymentPlanEntryInput,
+  RepaymentPlanEntryUpdate
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1563,6 +1569,457 @@ export const useRecordRepayment = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getRecordRepaymentMutationOptions(options));
+    }
+
+export const getListRepaymentPlanUrl = (chamaId: number,
+    loanId: number,) => {
+
+
+
+
+  return `/api/chamas/${chamaId}/loans/${loanId}/repayment-plan`
+}
+
+/**
+ * @summary List repayment plan entries for a loan
+ */
+export const listRepaymentPlan = async (chamaId: number,
+    loanId: number, options?: RequestInit): Promise<RepaymentPlanEntry[]> => {
+
+  return customFetch<RepaymentPlanEntry[]>(getListRepaymentPlanUrl(chamaId,loanId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRepaymentPlanQueryKey = (chamaId: number,
+    loanId: number,) => {
+    return [
+    `/api/chamas/${chamaId}/loans/${loanId}/repayment-plan`
+    ] as const;
+    }
+
+
+export const getListRepaymentPlanQueryOptions = <TData = Awaited<ReturnType<typeof listRepaymentPlan>>, TError = ErrorType<unknown>>(chamaId: number,
+    loanId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRepaymentPlan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRepaymentPlanQueryKey(chamaId,loanId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRepaymentPlan>>> = ({ signal }) => listRepaymentPlan(chamaId,loanId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(chamaId && loanId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRepaymentPlan>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRepaymentPlanQueryResult = NonNullable<Awaited<ReturnType<typeof listRepaymentPlan>>>
+export type ListRepaymentPlanQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List repayment plan entries for a loan
+ */
+
+export function useListRepaymentPlan<TData = Awaited<ReturnType<typeof listRepaymentPlan>>, TError = ErrorType<unknown>>(
+ chamaId: number,
+    loanId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRepaymentPlan>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRepaymentPlanQueryOptions(chamaId,loanId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getAddRepaymentPlanEntryUrl = (chamaId: number,
+    loanId: number,) => {
+
+
+
+
+  return `/api/chamas/${chamaId}/loans/${loanId}/repayment-plan`
+}
+
+/**
+ * @summary Add a planned installment to a loan repayment plan
+ */
+export const addRepaymentPlanEntry = async (chamaId: number,
+    loanId: number,
+    repaymentPlanEntryInput: RepaymentPlanEntryInput, options?: RequestInit): Promise<RepaymentPlanEntry> => {
+
+  return customFetch<RepaymentPlanEntry>(getAddRepaymentPlanEntryUrl(chamaId,loanId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      repaymentPlanEntryInput,)
+  }
+);}
+
+
+
+
+export const getAddRepaymentPlanEntryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addRepaymentPlanEntry>>, TError,{chamaId: number;loanId: number;data: BodyType<RepaymentPlanEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addRepaymentPlanEntry>>, TError,{chamaId: number;loanId: number;data: BodyType<RepaymentPlanEntryInput>}, TContext> => {
+
+const mutationKey = ['addRepaymentPlanEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addRepaymentPlanEntry>>, {chamaId: number;loanId: number;data: BodyType<RepaymentPlanEntryInput>}> = (props) => {
+          const {chamaId,loanId,data} = props ?? {};
+
+          return  addRepaymentPlanEntry(chamaId,loanId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddRepaymentPlanEntryMutationResult = NonNullable<Awaited<ReturnType<typeof addRepaymentPlanEntry>>>
+    export type AddRepaymentPlanEntryMutationBody = BodyType<RepaymentPlanEntryInput>
+    export type AddRepaymentPlanEntryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Add a planned installment to a loan repayment plan
+ */
+export const useAddRepaymentPlanEntry = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addRepaymentPlanEntry>>, TError,{chamaId: number;loanId: number;data: BodyType<RepaymentPlanEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addRepaymentPlanEntry>>,
+        TError,
+        {chamaId: number;loanId: number;data: BodyType<RepaymentPlanEntryInput>},
+        TContext
+      > => {
+      return useMutation(getAddRepaymentPlanEntryMutationOptions(options));
+    }
+
+export const getUpdateRepaymentPlanEntryUrl = (chamaId: number,
+    loanId: number,
+    planId: number,) => {
+
+
+
+
+  return `/api/chamas/${chamaId}/loans/${loanId}/repayment-plan/${planId}`
+}
+
+/**
+ * @summary Update a repayment plan entry status
+ */
+export const updateRepaymentPlanEntry = async (chamaId: number,
+    loanId: number,
+    planId: number,
+    repaymentPlanEntryUpdate: RepaymentPlanEntryUpdate, options?: RequestInit): Promise<RepaymentPlanEntry> => {
+
+  return customFetch<RepaymentPlanEntry>(getUpdateRepaymentPlanEntryUrl(chamaId,loanId,planId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      repaymentPlanEntryUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateRepaymentPlanEntryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateRepaymentPlanEntry>>, TError,{chamaId: number;loanId: number;planId: number;data: BodyType<RepaymentPlanEntryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateRepaymentPlanEntry>>, TError,{chamaId: number;loanId: number;planId: number;data: BodyType<RepaymentPlanEntryUpdate>}, TContext> => {
+
+const mutationKey = ['updateRepaymentPlanEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateRepaymentPlanEntry>>, {chamaId: number;loanId: number;planId: number;data: BodyType<RepaymentPlanEntryUpdate>}> = (props) => {
+          const {chamaId,loanId,planId,data} = props ?? {};
+
+          return  updateRepaymentPlanEntry(chamaId,loanId,planId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateRepaymentPlanEntryMutationResult = NonNullable<Awaited<ReturnType<typeof updateRepaymentPlanEntry>>>
+    export type UpdateRepaymentPlanEntryMutationBody = BodyType<RepaymentPlanEntryUpdate>
+    export type UpdateRepaymentPlanEntryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a repayment plan entry status
+ */
+export const useUpdateRepaymentPlanEntry = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateRepaymentPlanEntry>>, TError,{chamaId: number;loanId: number;planId: number;data: BodyType<RepaymentPlanEntryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateRepaymentPlanEntry>>,
+        TError,
+        {chamaId: number;loanId: number;planId: number;data: BodyType<RepaymentPlanEntryUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateRepaymentPlanEntryMutationOptions(options));
+    }
+
+export const getCreateInvitationUrl = (chamaId: number,) => {
+
+
+
+
+  return `/api/chamas/${chamaId}/invitations`
+}
+
+/**
+ * @summary Generate an invite link for a chama
+ */
+export const createInvitation = async (chamaId: number, options?: RequestInit): Promise<Invitation> => {
+
+  return customFetch<Invitation>(getCreateInvitationUrl(chamaId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCreateInvitationMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInvitation>>, TError,{chamaId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createInvitation>>, TError,{chamaId: number}, TContext> => {
+
+const mutationKey = ['createInvitation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createInvitation>>, {chamaId: number}> = (props) => {
+          const {chamaId} = props ?? {};
+
+          return  createInvitation(chamaId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateInvitationMutationResult = NonNullable<Awaited<ReturnType<typeof createInvitation>>>
+
+    export type CreateInvitationMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Generate an invite link for a chama
+ */
+export const useCreateInvitation = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createInvitation>>, TError,{chamaId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createInvitation>>,
+        TError,
+        {chamaId: number},
+        TContext
+      > => {
+      return useMutation(getCreateInvitationMutationOptions(options));
+    }
+
+export const getGetInvitationUrl = (token: string,) => {
+
+
+
+
+  return `/api/invitations/${token}`
+}
+
+/**
+ * @summary Get public info for an invite link
+ */
+export const getInvitation = async (token: string, options?: RequestInit): Promise<InvitationPublic> => {
+
+  return customFetch<InvitationPublic>(getGetInvitationUrl(token),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetInvitationQueryKey = (token: string,) => {
+    return [
+    `/api/invitations/${token}`
+    ] as const;
+    }
+
+
+export const getGetInvitationQueryOptions = <TData = Awaited<ReturnType<typeof getInvitation>>, TError = ErrorType<void>>(token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInvitation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInvitationQueryKey(token);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInvitation>>> = ({ signal }) => getInvitation(token, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(token), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInvitation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetInvitationQueryResult = NonNullable<Awaited<ReturnType<typeof getInvitation>>>
+export type GetInvitationQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get public info for an invite link
+ */
+
+export function useGetInvitation<TData = Awaited<ReturnType<typeof getInvitation>>, TError = ErrorType<void>>(
+ token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInvitation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetInvitationQueryOptions(token,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getAcceptInvitationUrl = (token: string,) => {
+
+
+
+
+  return `/api/invitations/${token}/accept`
+}
+
+/**
+ * @summary Accept an invite and join the chama as a member
+ */
+export const acceptInvitation = async (token: string,
+    invitationAcceptInput: InvitationAcceptInput, options?: RequestInit): Promise<Member> => {
+
+  return customFetch<Member>(getAcceptInvitationUrl(token),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      invitationAcceptInput,)
+  }
+);}
+
+
+
+
+export const getAcceptInvitationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptInvitation>>, TError,{token: string;data: BodyType<InvitationAcceptInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acceptInvitation>>, TError,{token: string;data: BodyType<InvitationAcceptInput>}, TContext> => {
+
+const mutationKey = ['acceptInvitation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptInvitation>>, {token: string;data: BodyType<InvitationAcceptInput>}> = (props) => {
+          const {token,data} = props ?? {};
+
+          return  acceptInvitation(token,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcceptInvitationMutationResult = NonNullable<Awaited<ReturnType<typeof acceptInvitation>>>
+    export type AcceptInvitationMutationBody = BodyType<InvitationAcceptInput>
+    export type AcceptInvitationMutationError = ErrorType<void>
+
+    /**
+ * @summary Accept an invite and join the chama as a member
+ */
+export const useAcceptInvitation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acceptInvitation>>, TError,{token: string;data: BodyType<InvitationAcceptInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acceptInvitation>>,
+        TError,
+        {token: string;data: BodyType<InvitationAcceptInput>},
+        TContext
+      > => {
+      return useMutation(getAcceptInvitationMutationOptions(options));
     }
 
 export const getListMpesaTransactionsUrl = (chamaId: number,) => {

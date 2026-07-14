@@ -5,6 +5,7 @@ import membersRouter from "./members";
 import contributionsRouter from "./contributions";
 import loansRouter from "./loans";
 import mpesaRouter from "./mpesa";
+import invitationsRouter from "./invitations";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(membersRouter);
 router.use(contributionsRouter);
 router.use(loansRouter);
 router.use(mpesaRouter);
+router.use(invitationsRouter);
 
 export default router;

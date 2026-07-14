@@ -3,10 +3,11 @@ import { useParams, Link } from "wouter";
 import {
   useListMembers, getListMembersQueryKey,
   useAddMember, useRemoveMember,
-  useGetChama, getGetChamaQueryKey
+  useGetChama, getGetChamaQueryKey,
+  useCreateInvitation,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, Plus, Trash2, Edit2, ShieldAlert } from "lucide-react";
+import { ChevronLeft, Plus, Trash2, Edit2, ShieldAlert, Link2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -47,6 +48,9 @@ export default function ManageMembers() {
   const chamaId = parseInt(params.id || "0", 10);
   const queryClient = useQueryClient();
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const { data: chama } = useGetChama(chamaId, {
     query: { enabled: !!chamaId, queryKey: getGetChamaQueryKey(chamaId) }
@@ -58,6 +62,7 @@ export default function ManageMembers() {
 
   const addMember = useAddMember();
   const removeMember = useRemoveMember();
+  const createInvitation = useCreateInvitation();
 
   const form = useForm<z.infer<typeof memberSchema>>({
     resolver: zodResolver(memberSchema),
@@ -94,6 +99,31 @@ export default function ManageMembers() {
     }
   };
 
+  const handleGenerateInvite = () => {
+    createInvitation.mutate(
+      { chamaId },
+      {
+        onSuccess: (data) => {
+          const base = window.location.origin;
+          const basePath = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+          const link = `${base}${basePath}/join/${data.token}`;
+          setInviteLink(link);
+          setIsInviteOpen(true);
+        },
+        onError: () => toast.error("Failed to generate invite link"),
+      }
+    );
+  };
+
+  const handleCopy = async () => {
+    if (inviteLink) {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success("Link copied to clipboard!");
+    }
+  };
+
   return (
     <div className="pb-8">
       <PageHero
@@ -109,61 +139,106 @@ export default function ManageMembers() {
             <ChevronLeft className="w-4 h-4 mr-1" /> Back to Chama
           </Link>
 
-          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2"><Plus className="w-4 h-4" /> Add Member</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Add New Member</DialogTitle></DialogHeader>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                  <FormField control={form.control} name="name" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Full Name</FormLabel>
-                      <FormControl><Input placeholder="Jane Doe" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="phoneNumber" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Phone Number</FormLabel>
-                      <FormControl><Input placeholder="254700000000" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="email" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email (Optional)</FormLabel>
-                      <FormControl><Input placeholder="jane@example.com" type="email" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="role" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Role</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl><SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger></FormControl>
-                        <SelectContent>
-                          <SelectItem value="member">Member</SelectItem>
-                          <SelectItem value="chairperson">Chairperson</SelectItem>
-                          <SelectItem value="treasurer">Treasurer</SelectItem>
-                          <SelectItem value="secretary">Secretary</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
-                    <Button type="submit" disabled={addMember.isPending}>
-                      {addMember.isPending ? "Adding..." : "Add Member"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="gap-2 border-green-200 text-green-700 hover:bg-green-50"
+              onClick={handleGenerateInvite}
+              disabled={createInvitation.isPending}
+            >
+              <Link2 className="w-4 h-4" />
+              {createInvitation.isPending ? "Generating..." : "Share Invite Link"}
+            </Button>
+
+            <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+              <DialogTrigger asChild>
+                <Button className="gap-2"><Plus className="w-4 h-4" /> Add Member</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Add New Member</DialogTitle></DialogHeader>
+                <Form {...form}>
+                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                    <FormField control={form.control} name="name" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Full Name</FormLabel>
+                        <FormControl><Input placeholder="Jane Doe" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="phoneNumber" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone Number</FormLabel>
+                        <FormControl><Input placeholder="254700000000" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="email" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email (Optional)</FormLabel>
+                        <FormControl><Input placeholder="jane@example.com" type="email" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="role" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Role</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl><SelectTrigger><SelectValue placeholder="Select role" /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="member">Member</SelectItem>
+                            <SelectItem value="chairperson">Chairperson</SelectItem>
+                            <SelectItem value="treasurer">Treasurer</SelectItem>
+                            <SelectItem value="secretary">Secretary</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
+                      <Button type="submit" disabled={addMember.isPending}>
+                        {addMember.isPending ? "Adding..." : "Add Member"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
+
+        {/* Invite link dialog */}
+        <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Link2 className="w-5 h-5 text-green-600" /> Shareable Invite Link
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Share this link with anyone you'd like to invite to <strong>{chama?.name}</strong>. It expires in 7 days and allows up to 50 uses.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={inviteLink || ""}
+                  readOnly
+                  className="font-mono text-xs bg-muted"
+                />
+                <Button onClick={handleCopy} variant="outline" className="shrink-0 gap-1">
+                  {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+              </div>
+              <div className="text-xs text-muted-foreground bg-amber-50 border border-amber-100 rounded p-3">
+                Anyone with this link can join the chama directly — only share with trusted contacts.
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setIsInviteOpen(false)}>Done</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Member count banner */}
         {members && members.length > 0 && (

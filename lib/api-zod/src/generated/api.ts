@@ -412,6 +412,117 @@ export const RecordRepaymentBody = zod.object({
 
 
 /**
+ * @summary List repayment plan entries for a loan
+ */
+export const ListRepaymentPlanParams = zod.object({
+  "chamaId": zod.coerce.number(),
+  "loanId": zod.coerce.number()
+})
+
+export const ListRepaymentPlanResponseItem = zod.object({
+  "id": zod.number(),
+  "loanId": zod.number(),
+  "chamaId": zod.number(),
+  "plannedDate": zod.coerce.date(),
+  "plannedAmount": zod.number(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['planned', 'paid', 'skipped']),
+  "createdAt": zod.coerce.date()
+})
+export const ListRepaymentPlanResponse = zod.array(ListRepaymentPlanResponseItem)
+
+
+/**
+ * @summary Add a planned installment to a loan repayment plan
+ */
+export const AddRepaymentPlanEntryParams = zod.object({
+  "chamaId": zod.coerce.number(),
+  "loanId": zod.coerce.number()
+})
+
+
+
+
+export const AddRepaymentPlanEntryBody = zod.object({
+  "plannedDate": zod.coerce.date(),
+  "plannedAmount": zod.number().min(1),
+  "notes": zod.string().optional()
+})
+
+
+/**
+ * @summary Update a repayment plan entry status
+ */
+export const UpdateRepaymentPlanEntryParams = zod.object({
+  "chamaId": zod.coerce.number(),
+  "loanId": zod.coerce.number(),
+  "planId": zod.coerce.number()
+})
+
+export const UpdateRepaymentPlanEntryBody = zod.object({
+  "status": zod.enum(['planned', 'paid', 'skipped']).optional(),
+  "notes": zod.string().optional()
+})
+
+export const UpdateRepaymentPlanEntryResponse = zod.object({
+  "id": zod.number(),
+  "loanId": zod.number(),
+  "chamaId": zod.number(),
+  "plannedDate": zod.coerce.date(),
+  "plannedAmount": zod.number(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['planned', 'paid', 'skipped']),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Generate an invite link for a chama
+ */
+export const CreateInvitationParams = zod.object({
+  "chamaId": zod.coerce.number()
+})
+
+
+/**
+ * @summary Get public info for an invite link
+ */
+export const GetInvitationParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+export const GetInvitationResponse = zod.object({
+  "chamaId": zod.number(),
+  "chamaName": zod.string(),
+  "chamaDescription": zod.string().nullish(),
+  "contributionAmount": zod.number(),
+  "meetingFrequency": zod.enum(['weekly', 'monthly', 'quarterly']),
+  "memberCount": zod.number(),
+  "expiresAt": zod.coerce.date(),
+  "isExpired": zod.boolean()
+})
+
+
+/**
+ * @summary Accept an invite and join the chama as a member
+ */
+export const AcceptInvitationParams = zod.object({
+  "token": zod.coerce.string()
+})
+
+
+
+
+
+export const AcceptInvitationBody = zod.object({
+  "name": zod.string().min(1),
+  "phoneNumber": zod.string().min(1),
+  "email": zod.string().optional(),
+  "role": zod.enum(['chairperson', 'treasurer', 'secretary', 'member']).optional()
+})
+
+
+/**
  * @summary List M-Pesa transaction history for a chama
  */
 export const ListMpesaTransactionsParams = zod.object({
